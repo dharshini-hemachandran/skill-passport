@@ -1,187 +1,551 @@
-"""Skill Passport API. Same ML as matching.py/simple_ml.py: clean -> TF-IDF (tfidf_data.pkl) -> cosine.
-Run from project root: uvicorn server:app --reload --port 8000"""
-import io, json, os, re, uuid, hashlib
+"""Skill Passport API.
+
+Run locally with: uvicorn server:app --reload --port 8000
+"""
+from contextlib import asynccontextmanager
+import csv
+import hashlib
+import hmac
+import io
+import json
+import os
+import re
+import secrets
+import threading
+import uuid
+import zipfile
 from collections import Counter
-import joblib, numpy as np, pandas as pd
-from fastapi import FastAPI, File, HTTPException, UploadFile, Header
+from pathlib import Path
+from typing import Literal
+
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from pypdf import PdfReader
+from pypdf.errors import FileNotDecryptedError, PdfReadError
+from starlette.concurrency import run_in_threadpool
 
-app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-DB_FILE = "db.json"
+ROOT = Path(__file__).resolve().parent
+DATABASE_URL = os.getenv("DATABASE_URL", "").replace("postgres://", "postgresql://", 1)
+DB_FILE = Path(os.getenv("SKILL_PASSPORT_DB_FILE", ROOT / "db.json"))
+MAX_RESUME_BYTES = 10 * 1024 * 1024
+SKILLS = [
+    "python", "java", "javascript", "c++", "sql", "html", "css", "react",
+    "machine learning", "deep learning", "artificial intelligence", "data science",
+    "data analysis", "pandas", "numpy", "tensorflow", "pytorch", "computer vision",
+    "opencv", "nlp", "natural language processing", "statistics", "excel",
+    "power bi", "tableau", "git", "github", "docker", "linux", "cybersecurity",
+    "networking", "figma", "ui design", "ux design",
+]
 
-# ---------- ML (identical logic to matching.py) ----------
-_m = joblib.load("model/tfidf_data.pkl")
-vocabulary, word_to_index, idf = _m["vocabulary"], _m["word_to_index"], _m["idf"]
 
-SKILLS = ["python","java","javascript","c++","sql","html","css","react","machine learning","deep learning",
- "artificial intelligence","data science","data analysis","pandas","numpy","tensorflow","pytorch",
- "computer vision","opencv","nlp","natural language processing","statistics","excel","power bi","tableau",
- "git","github","docker","linux","cybersecurity","networking","figma","ui design","ux design"]
+def clean_text(text: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9\s+#]", " ", text.lower())).strip()
 
-def clean_text(t):
-    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9\s]", " ", t.lower())).strip()
 
-def extract_skills(t):
-    t = t.lower()
-    return [s for s in SKILLS if re.search(r"\b" + re.escape(s) + r"\b", t)]
+def extract_skills(text: str) -> list[str]:
+    lowered = text.lower()
+    return [skill for skill in SKILLS if re.search(r"\b" + re.escape(skill) + r"\b", lowered)]
 
-def create_vector(text):
-    words = clean_text(text).split()
-    v = np.zeros(len(vocabulary), dtype=np.float32)
-    if not words: return v
-    for w, c in Counter(words).items():
-        if w in word_to_index:
-            i = word_to_index[w]; v[i] = (c / len(words)) * idf[i]
-    return v
 
-def cosine(a, b):
-    d = np.linalg.norm(a) * np.linalg.norm(b)
-    return float(np.dot(a, b) / d) if d else 0.0
+def text_vector(text: str) -> Counter[str]:
+    return Counter(re.findall(r"[a-z0-9+#]+", clean_text(text)))
 
-def opp_text(o): return f"{o['description']} {' '.join(o.get('skills', []))}"
-def profile_text(p):
-    parts = list(p.get("skills", []))
-    for x in p.get("projects", []): parts += [x.get("title", ""), x.get("description", ""), x.get("tech", "")]
-    for x in p.get("achievements", []): parts.append(x.get("title", ""))
-    parts.append(p.get("resume_text", ""))
+
+def cosine_similarity(left: str, right: str) -> float:
+    left_vector, right_vector = text_vector(left), text_vector(right)
+    dot = sum(count * right_vector.get(word, 0) for word, count in left_vector.items())
+    left_norm = sum(count * count for count in left_vector.values())
+    right_norm = sum(count * count for count in right_vector.values())
+    denominator = (left_norm * right_norm) ** 0.5
+    return dot / denominator if denominator else 0.0
+
+
+def opportunity_text(opportunity: dict) -> str:
+    return " ".join([
+        opportunity.get("title", ""),
+        opportunity.get("description", ""),
+        *opportunity.get("skills", []),
+    ])
+
+
+def profile_text(profile: dict) -> str:
+    parts = list(profile.get("skills", []))
+    for project in profile.get("projects", []):
+        parts.extend([
+            project.get("title", ""),
+            project.get("description", ""),
+            project.get("tech", ""),
+        ])
+    parts.extend(item.get("title", "") for item in profile.get("achievements", []))
+    parts.append(profile.get("resume_text", ""))
     return " ".join(parts)
 
-# ---------- persistence (local JSON fallback) ----------
-def load():
-    if os.path.exists(DB_FILE): return json.load(open(DB_FILE))
-    db = {"users": {}, "profiles": {}, "opportunities": [], "applications": [], "saved": [], "sessions": {}}
-    if os.path.exists("data/opportunities.csv"):
-        for i, r in pd.read_csv("data/opportunities.csv").iterrows():
-            desc = str(r["description"])
-            db["opportunities"].append({"id": f"o{i+1}", "title": str(r["title"]), "org": str(r.get("organization", "Campus")),
-              "type": str(r.get("type", "Club")), "description": desc, "skills": extract_skills(desc),
-              "deadline": "", "contact": "", "creator": None})
-    save(db); return db
-def save(db): json.dump(db, open(DB_FILE, "w"), indent=1)
-db = load()
-def hp(p): return hashlib.sha256(p.encode()).hexdigest()
-def me(token):
-    uid = db["sessions"].get((token or "").replace("Bearer ", ""))
-    if not uid: raise HTTPException(401, "Not logged in")
-    return db["users"][uid]
 
-def ranked(profile):
-    pv = create_vector(profile_text(profile))
-    out = [{**o, "similarity": cosine(pv, create_vector(opp_text(o)))} for o in db["opportunities"]]
-    return sorted(out, key=lambda x: -x["similarity"])
+def extract_docx_text(raw: bytes) -> str:
+    from docx import Document
+    from docx.opc.exceptions import PackageNotFoundError
 
-# ---------- auth ----------
+    try:
+        document = Document(io.BytesIO(raw))
+    except (PackageNotFoundError, zipfile.BadZipFile) as error:
+        raise HTTPException(status_code=400, detail="The uploaded resume could not be read.") from error
+    paragraphs = [paragraph.text for paragraph in document.paragraphs]
+    table_cells = [
+        cell.text
+        for table in document.tables
+        for row in table.rows
+        for cell in row.cells
+    ]
+    return "\n".join([*paragraphs, *table_cells])
+
+
+def empty_state() -> dict:
+    opportunities = []
+    csv_path = ROOT / "data" / "opportunities.csv"
+    if csv_path.exists():
+        with csv_path.open(encoding="utf-8", newline="") as source:
+            for index, row in enumerate(csv.DictReader(source), start=1):
+                description = row.get("description", "")
+                opportunities.append({
+                    "id": f"o{index}",
+                    "title": row.get("title", ""),
+                    "org": row.get("organization", "Campus"),
+                    "type": row.get("type", "Project"),
+                    "description": description,
+                    "skills": extract_skills(description),
+                    "deadline": "",
+                    "contact": "",
+                    "creator": None,
+                })
+    return {
+        "users": {},
+        "profiles": {},
+        "opportunities": opportunities,
+        "applications": [],
+        "saved": [],
+        "sessions": {},
+    }
+
+
+def load_state() -> dict:
+    if DATABASE_URL:
+        import psycopg
+        from psycopg.types.json import Jsonb
+
+        with psycopg.connect(DATABASE_URL) as connection:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS skill_passport_state "
+                "(id SMALLINT PRIMARY KEY CHECK (id = 1), data JSONB NOT NULL)"
+            )
+            row = connection.execute(
+                "SELECT data FROM skill_passport_state WHERE id = 1"
+            ).fetchone()
+            if row:
+                return row[0]
+            state = empty_state()
+            connection.execute(
+                "INSERT INTO skill_passport_state (id, data) VALUES (1, %s)",
+                (Jsonb(state),),
+            )
+            return state
+    if DB_FILE.exists():
+        with DB_FILE.open(encoding="utf-8") as source:
+            return json.load(source)
+    state = empty_state()
+    save_state(state)
+    return state
+
+
+def save_state(state: dict) -> None:
+    if DATABASE_URL:
+        import psycopg
+        from psycopg.types.json import Jsonb
+
+        with psycopg.connect(DATABASE_URL) as connection:
+            connection.execute(
+                "INSERT INTO skill_passport_state (id, data) VALUES (1, %s) "
+                "ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data",
+                (Jsonb(state),),
+            )
+        return
+    temporary_path = DB_FILE.with_suffix(DB_FILE.suffix + ".tmp")
+    with temporary_path.open("w", encoding="utf-8") as target:
+        json.dump(state, target, indent=1)
+    temporary_path.replace(DB_FILE)
+
+
+def hash_password(password: str, salt: bytes | None = None) -> tuple[str, str]:
+    salt = salt or secrets.token_bytes(16)
+    digest = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=2**14, r=8, p=1)
+    return salt.hex(), digest.hex()
+
+
+def public_user(user: dict) -> dict:
+    return {key: value for key, value in user.items() if key not in {"pw", "pw_salt"}}
+
+
+def current_user(authorization: str | None) -> dict:
+    token = (authorization or "").removeprefix("Bearer ").strip()
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    user_id = db["sessions"].get(token_hash)
+    if not user_id or user_id not in db["users"]:
+        raise HTTPException(status_code=401, detail="Please sign in again.")
+    return db["users"][user_id]
+
+
+def ranked(profile: dict) -> list[dict]:
+    text = profile_text(profile)
+    opportunities = [
+        {**item, "similarity": cosine_similarity(text, opportunity_text(item))}
+        for item in db["opportunities"]
+    ]
+    return sorted(opportunities, key=lambda item: -item["similarity"])
+
+
+def seed_state_if_needed() -> None:
+    global db
+    if os.getenv("REQUIRE_DATABASE_URL", "").lower() == "true" and not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL must be set for the hosted service.")
+    db.clear()
+    db.update(load_state())
+
+
+db: dict = {}
+request_lock = threading.Lock()
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    await run_in_threadpool(seed_state_if_needed)
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://dharshini-hemachandran.github.io",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        *([os.environ["RENDER_EXTERNAL_URL"]] if os.getenv("RENDER_EXTERNAL_URL") else []),
+    ],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+
+
+@app.middleware("http")
+async def refresh_shared_state(request, call_next):
+    await run_in_threadpool(request_lock.acquire)
+    try:
+        latest_state = await run_in_threadpool(load_state)
+        db.clear()
+        db.update(latest_state)
+        return await call_next(request)
+    finally:
+        request_lock.release()
+
+
 class Signup(BaseModel):
-    name: str; email: str; password: str; role: str = "student"
-    field: str = ""; year: str = ""; org: str = ""; org_type: str = ""; position: str = ""
-class Login(BaseModel): email: str; password: str
+    name: str = Field(min_length=1, max_length=120)
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=10, max_length=128)
+    role: Literal["student", "creator"] = "student"
+    field: str = ""
+    year: str = ""
+    org: str = ""
+    org_type: str = ""
+    position: str = ""
+
+
+class Login(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=128)
+
+
+@app.get("/api/health")
+def health() -> dict:
+    return {"status": "ok"}
+
 
 @app.post("/api/signup")
-def signup(s: Signup):
-    if any(u["email"] == s.email for u in db["users"].values()): raise HTTPException(400, "Email already registered")
-    uid = uuid.uuid4().hex[:8]; tok = uuid.uuid4().hex
-    db["users"][uid] = {**s.dict(exclude={"password"}), "id": uid, "pw": hp(s.password)}
-    db["profiles"][uid] = {"skills": [], "projects": [], "achievements": [], "links": [], "evidence": [], "resume_text": ""}
-    db["sessions"][tok] = uid; save(db)
-    return {"token": tok, "user": {k: v for k, v in db["users"][uid].items() if k != "pw"}}
+def signup(details: Signup) -> dict:
+    email = details.email.strip().lower()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        raise HTTPException(status_code=422, detail="Enter a valid email address.")
+    if any(user["email"] == email for user in db["users"].values()):
+        raise HTTPException(status_code=409, detail="Email already registered.")
+    user_id = uuid.uuid4().hex
+    token = secrets.token_urlsafe(32)
+    salt, password_hash = hash_password(details.password)
+    user = details.model_dump(exclude={"password"})
+    user.update({"id": user_id, "email": email, "pw": password_hash, "pw_salt": salt})
+    db["users"][user_id] = user
+    db["profiles"][user_id] = {
+        "skills": [],
+        "projects": [],
+        "achievements": [],
+        "links": [],
+        "evidence": [],
+        "resume_text": "",
+    }
+    db["sessions"][hashlib.sha256(token.encode("utf-8")).hexdigest()] = user_id
+    save_state(db)
+    return {"token": token, "user": public_user(user)}
+
 
 @app.post("/api/login")
-def login(l: Login):
-    u = next((u for u in db["users"].values() if u["email"] == l.email and u["pw"] == hp(l.password)), None)
-    if not u: raise HTTPException(401, "Invalid credentials")
-    tok = uuid.uuid4().hex; db["sessions"][tok] = u["id"]; save(db)
-    return {"token": tok, "user": {k: v for k, v in u.items() if k != "pw"}}
+def login(details: Login) -> dict:
+    email = details.email.strip().lower()
+    user = next(
+        (item for item in db["users"].values() if item["email"] == email),
+        None,
+    )
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+    salt, expected_hash = bytes.fromhex(user["pw_salt"]), user["pw"]
+    _, actual_hash = hash_password(details.password, salt)
+    if not hmac.compare_digest(actual_hash, expected_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+    token = secrets.token_urlsafe(32)
+    db["sessions"][hashlib.sha256(token.encode("utf-8")).hexdigest()] = user["id"]
+    save_state(db)
+    return {"token": token, "user": public_user(user)}
+
 
 @app.post("/api/forgot-password")
-def forgot(d: dict): return {"ok": True, "message": "If the account exists, a reset link would be sent (demo mode)."}
+def forgot_password() -> dict:
+    raise HTTPException(status_code=501, detail="Password recovery is not configured yet.")
 
-# ---------- profile ----------
+
+@app.post("/api/logout")
+def logout(authorization: str | None = Header(default=None)) -> dict:
+    token = (authorization or "").removeprefix("Bearer ").strip()
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    if db["sessions"].pop(token_hash, None) is not None:
+        save_state(db)
+    return {"ok": True}
+
+
 @app.get("/api/profile")
-def get_profile(authorization: str = Header(None)):
-    u = me(authorization); return {"user": {k: v for k, v in u.items() if k != "pw"}, "profile": db["profiles"][u["id"]]}
+def get_profile(authorization: str | None = Header(default=None)) -> dict:
+    user = current_user(authorization)
+    return {"user": public_user(user), "profile": db["profiles"][user["id"]]}
+
 
 @app.put("/api/profile")
-def put_profile(p: dict, authorization: str = Header(None)):
-    u = me(authorization); db["profiles"][u["id"]] = p; save(db); return p
+def put_profile(profile: dict, authorization: str | None = Header(default=None)) -> dict:
+    user = current_user(authorization)
+    db["profiles"][user["id"]] = profile
+    save_state(db)
+    return profile
 
-# ---------- ML endpoints ----------
+
+@app.put("/api/user")
+def update_user(details: dict, authorization: str | None = Header(default=None)) -> dict:
+    user = current_user(authorization)
+    for key in ("name", "field"):
+        if key in details:
+            user[key] = details[key]
+    save_state(db)
+    return public_user(user)
+
+
 @app.post("/api/analyze-resume")
-async def analyze(file: UploadFile = File(...)):
-    raw = await file.read()
-    if file.filename.lower().endswith(".pdf"):
-        from pypdf import PdfReader
-        text = "\n".join((pg.extract_text() or "") for pg in PdfReader(io.BytesIO(raw)).pages)
-    else: text = raw.decode("utf-8", "ignore")
+async def analyze_resume(
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    current_user(authorization)
+    filename = file.filename or ""
+    extension = Path(filename).suffix.lower()
+    if extension not in {".txt", ".pdf", ".docx"}:
+        raise HTTPException(
+            status_code=415,
+            detail="Supported resume formats are .txt, .pdf, and .docx.",
+        )
+    raw = await file.read(MAX_RESUME_BYTES + 1)
+    if len(raw) > MAX_RESUME_BYTES:
+        raise HTTPException(status_code=413, detail="Resume files must be 10 MB or smaller.")
+    try:
+        if extension == ".pdf":
+            text = "\n".join(
+                page.extract_text() or ""
+                for page in PdfReader(io.BytesIO(raw)).pages
+            )
+        elif extension == ".docx":
+            text = extract_docx_text(raw)
+        else:
+            text = raw.decode("utf-8")
+    except (
+        FileNotDecryptedError,
+        PdfReadError,
+        UnicodeDecodeError,
+        ValueError,
+        OSError,
+        zipfile.BadZipFile,
+    ) as error:
+        raise HTTPException(status_code=400, detail="The uploaded resume could not be read.") from error
+    if not text.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="No readable text was found. Scanned PDFs need OCR.",
+        )
     return {"skills": extract_skills(text), "text": text}
 
-@app.post("/api/match-opportunities")
-def match(profile: dict): return ranked(profile)
 
-# ---------- opportunities ----------
+@app.post("/api/match-opportunities")
+def match_opportunities(profile: dict) -> list[dict]:
+    return ranked(profile)
+
+
 @app.get("/api/opportunities")
-def list_opps(): return db["opportunities"]
+def list_opportunities() -> list[dict]:
+    return db["opportunities"]
+
 
 @app.post("/api/opportunities")
-def create_opp(o: dict, authorization: str = Header(None)):
-    u = me(authorization)
-    if not o.get("title") or not o.get("description"): raise HTTPException(400, "Title and description required")
-    o = {**o, "id": "o" + uuid.uuid4().hex[:6], "creator": u["id"]}
-    o["skills"] = o.get("skills") or extract_skills(o["description"])
-    db["opportunities"].append(o); save(db); return o
+def create_opportunity(
+    opportunity: dict,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    user = current_user(authorization)
+    if user["role"] != "creator":
+        raise HTTPException(status_code=403, detail="Only opportunity creators can post opportunities.")
+    if not opportunity.get("title") or not opportunity.get("description"):
+        raise HTTPException(status_code=400, detail="Title and description required.")
+    item = {
+        **opportunity,
+        "id": "o" + uuid.uuid4().hex[:8],
+        "creator": user["id"],
+    }
+    item["skills"] = item.get("skills") or extract_skills(item["description"])
+    db["opportunities"].append(item)
+    save_state(db)
+    return item
 
-def _find(i):
-    o = next((o for o in db["opportunities"] if o["id"] == i), None)
-    if not o: raise HTTPException(404, "Not found")
-    return o
 
-@app.get("/api/opportunities/{i}")
-def get_opp(i: str): return _find(i)
+def find_opportunity(opportunity_id: str) -> dict:
+    item = next(
+        (opportunity for opportunity in db["opportunities"] if opportunity["id"] == opportunity_id),
+        None,
+    )
+    if item is None:
+        raise HTTPException(status_code=404, detail="Opportunity not found.")
+    return item
 
-@app.put("/api/opportunities/{i}")
-def upd_opp(i: str, d: dict, authorization: str = Header(None)):
-    u = me(authorization); o = _find(i)
-    if o["creator"] != u["id"]: raise HTTPException(403, "Not yours")
-    o.update({k: v for k, v in d.items() if k not in ("id", "creator")}); save(db); return o
 
-@app.delete("/api/opportunities/{i}")
-def del_opp(i: str, authorization: str = Header(None)):
-    u = me(authorization); o = _find(i)
-    if o["creator"] != u["id"]: raise HTTPException(403, "Not yours")
-    db["opportunities"].remove(o); save(db); return {"ok": True}
+@app.get("/api/opportunities/{opportunity_id}")
+def get_opportunity(opportunity_id: str) -> dict:
+    return find_opportunity(opportunity_id)
 
-@app.post("/api/opportunities/{i}/apply")
-def apply(i: str, authorization: str = Header(None)):
-    u = me(authorization); _find(i)
-    if not any(a["opp"] == i and a["user"] == u["id"] for a in db["applications"]):
-        db["applications"].append({"opp": i, "user": u["id"]}); save(db)
+
+@app.put("/api/opportunities/{opportunity_id}")
+def update_opportunity(
+    opportunity_id: str,
+    details: dict,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    user = current_user(authorization)
+    item = find_opportunity(opportunity_id)
+    if user["role"] != "creator" or item["creator"] != user["id"]:
+        raise HTTPException(status_code=403, detail="You can only edit your own opportunities.")
+    item.update({key: value for key, value in details.items() if key not in {"id", "creator"}})
+    save_state(db)
+    return item
+
+
+@app.delete("/api/opportunities/{opportunity_id}")
+def delete_opportunity(
+    opportunity_id: str,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    user = current_user(authorization)
+    item = find_opportunity(opportunity_id)
+    if user["role"] != "creator" or item["creator"] != user["id"]:
+        raise HTTPException(status_code=403, detail="You can only delete your own opportunities.")
+    db["opportunities"].remove(item)
+    save_state(db)
+    return {"ok": True}
+
+
+@app.post("/api/opportunities/{opportunity_id}/apply")
+def apply_to_opportunity(
+    opportunity_id: str,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    user = current_user(authorization)
+    if user["role"] != "student":
+        raise HTTPException(status_code=403, detail="Only students can apply to opportunities.")
+    find_opportunity(opportunity_id)
+    application = {"opp": opportunity_id, "user": user["id"]}
+    if application not in db["applications"]:
+        db["applications"].append(application)
+        save_state(db)
     return {"status": "APPLICATION SUBMITTED"}
 
-@app.post("/api/opportunities/{i}/save")
-def save_opp(i: str, authorization: str = Header(None)):
-    u = me(authorization); _find(i)
-    e = {"opp": i, "user": u["id"]}
-    if e in db["saved"]: db["saved"].remove(e); s = False
-    else: db["saved"].append(e); s = True
-    save(db); return {"saved": s}
+
+@app.post("/api/opportunities/{opportunity_id}/save")
+def toggle_saved_opportunity(
+    opportunity_id: str,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    user = current_user(authorization)
+    if user["role"] != "student":
+        raise HTTPException(status_code=403, detail="Only students can save opportunities.")
+    find_opportunity(opportunity_id)
+    saved = {"opp": opportunity_id, "user": user["id"]}
+    if saved in db["saved"]:
+        db["saved"].remove(saved)
+        is_saved = False
+    else:
+        db["saved"].append(saved)
+        is_saved = True
+    save_state(db)
+    return {"saved": is_saved}
+
 
 @app.get("/api/my-status")
-def status(authorization: str = Header(None)):
-    u = me(authorization)
-    return {"applied": [a["opp"] for a in db["applications"] if a["user"] == u["id"]],
-            "saved": [a["opp"] for a in db["saved"] if a["user"] == u["id"]]}
+def my_status(authorization: str | None = Header(default=None)) -> dict:
+    user = current_user(authorization)
+    return {
+        "applied": [
+            item["opp"] for item in db["applications"] if item["user"] == user["id"]
+        ],
+        "saved": [item["opp"] for item in db["saved"] if item["user"] == user["id"]],
+    }
 
-@app.get("/api/opportunities/{i}/candidates")
-def candidates(i: str):
-    ov = create_vector(opp_text(_find(i))); out = []
-    for uid, p in db["profiles"].items():
-        u = db["users"][uid]
-        if u["role"] != "student": continue
-        out.append({"id": uid, "name": u["name"], "field": u.get("field", ""), "profile": p,
-                    "similarity": cosine(ov, create_vector(profile_text(p)))})
-    return sorted(out, key=lambda x: -x["similarity"])
+
+@app.get("/api/opportunities/{opportunity_id}/candidates")
+def candidates(
+    opportunity_id: str,
+    authorization: str | None = Header(default=None),
+) -> list[dict]:
+    user = current_user(authorization)
+    opportunity = find_opportunity(opportunity_id)
+    if user["role"] != "creator" or opportunity["creator"] != user["id"]:
+        raise HTTPException(status_code=403, detail="You can only view candidates for your own opportunities.")
+    ranked_candidates = []
+    for user_id, profile in db["profiles"].items():
+        candidate_user = db["users"][user_id]
+        if candidate_user["role"] != "student":
+            continue
+        visible_profile = {key: value for key, value in profile.items() if key != "resume_text"}
+        ranked_candidates.append({
+            "id": user_id,
+            "name": candidate_user["name"],
+            "field": candidate_user.get("field", ""),
+            "profile": visible_profile,
+            "similarity": cosine_similarity(
+                opportunity_text(opportunity),
+                profile_text(profile),
+            ),
+        })
+    return sorted(ranked_candidates, key=lambda item: -item["similarity"])
+
 
 @app.get("/")
-def index(): return FileResponse("static/index.html")
+def index() -> FileResponse:
+    return FileResponse(ROOT / "static" / "index.html")
