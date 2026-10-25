@@ -1,0 +1,267 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Skill Passport</title>
+<style>
+:root{--bg:#0b0b0d;--paper:#e9e5da;--blue:#8fa8e8;--lav:#b9a6e6;--pink:#e79ac4;--mint:#a8dcc0;--lime:#d4e86a;--ink:#141414}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#ddd;font:14px Helvetica,Arial,sans-serif;height:100vh;overflow:hidden}
+button,input,select,textarea{font:inherit}
+.mono{font-family:"Courier New",monospace;letter-spacing:.08em;text-transform:uppercase;font-size:11px}
+.display{font:900 44px Impact,"Arial Black",sans-serif;text-transform:uppercase;line-height:.95;letter-spacing:-1px}
+.hand{font-family:"Bradley Hand","Segoe Script",cursive;color:#ccc;transform:rotate(-6deg)}
+#app{display:grid;grid-template-columns:190px 1fr;grid-template-rows:56px 1fr 150px;height:100vh}
+#top{grid-column:2;display:flex;gap:12px;align-items:center;justify-content:flex-end;padding:0 24px}
+#top input{width:320px;background:#111;border:1px solid #444;border-radius:20px;padding:8px 14px;color:#fff}
+#nav{grid-row:1/4;padding:20px 14px;border-right:1px solid #222}
+#nav .logo{font:900 20px Impact;margin-bottom:26px;letter-spacing:1px}
+#nav button{display:block;width:100%;text-align:left;background:none;border:0;color:#bbb;padding:11px 8px;cursor:pointer;border-radius:6px}
+#nav button.on{background:linear-gradient(90deg,#333,#555);color:#fff}
+#stage{position:relative;display:flex;justify-content:center;align-items:center;padding:8px 90px 0 20px;perspective:1800px}
+.book{display:grid;grid-template-columns:1fr 1fr;width:min(1000px,100%);height:100%;max-height:520px;position:relative}
+.pg{background:var(--paper);color:var(--ink);padding:26px;overflow:auto;position:relative;
+ background-image:radial-gradient(#0000000f 1px,transparent 1px);background-size:4px 4px;box-shadow:0 10px 40px #000a}
+.pg.l{border-radius:8px 0 0 8px;background-color:#dcd7ca}.pg.r{border-radius:0 8px 8px 0;border-left:3px solid #999}
+.pg h3{margin:0 0 12px}.tape{position:absolute;top:-8px;left:40%;width:80px;height:20px;background:#e79ac4aa;transform:rotate(-4deg)}
+.flip{animation:flip .38s ease}@keyframes flip{from{transform:rotateY(-35deg);opacity:.3;transform-origin:left}to{transform:none;opacity:1}}
+.tabs{position:absolute;right:6px;top:30px;display:flex;flex-direction:column;gap:4px}
+.tab{border:0;padding:9px 12px;border-radius:0 8px 8px 0;font:700 10px "Courier New";cursor:pointer;color:var(--ink);text-align:left;width:112px}
+.tab.on{width:130px}
+#thumbs{grid-column:2;display:flex;gap:14px;align-items:center;justify-content:center}
+.th{width:86px;height:100px;background:var(--paper);border:2px solid #333;border-radius:6px;color:var(--ink);cursor:pointer;padding:6px;font:700 9px "Courier New";text-align:left}
+.th.on{border-color:var(--lav);transform:translateY(-4px)}
+.arrow{background:none;border:0;color:var(--lav);font-size:28px;cursor:pointer}
+.stamp{display:inline-block;border:2px solid #2a3a8a;color:#2a3a8a;padding:5px 10px;margin:4px;font:700 12px "Courier New";transform:rotate(-3deg);text-transform:uppercase}
+.stamp:nth-child(2n){border-color:#a13a76;color:#a13a76;transform:rotate(2deg)}
+.stamp b{cursor:pointer;margin-left:6px}
+.doc{background:#f7f4ec;border:1px solid #bbb;padding:10px;margin:8px 0;box-shadow:2px 3px 0 #0002;transform:rotate(-.6deg);cursor:pointer}
+.doc:nth-child(2n){transform:rotate(.8deg)}
+.btn{background:var(--ink);color:var(--paper);border:0;padding:8px 14px;cursor:pointer;font:700 11px "Courier New";letter-spacing:.08em;margin:2px}
+.btn.alt{background:var(--pink);color:var(--ink)}
+.barcode{height:34px;width:150px;background:repeating-linear-gradient(90deg,#111 0 2px,transparent 2px 4px,#111 4px 5px,transparent 5px 8px)}
+.empty{text-align:center;padding:40px 10px}
+.pill{font:700 10px "Courier New";background:var(--mint);padding:2px 6px;margin-right:4px}
+.sim{font:900 30px Impact;color:#2a3a8a}
+#modal{position:fixed;inset:0;background:#000b;display:none;align-items:center;justify-content:center;z-index:9}
+#modal .box{background:var(--paper);color:var(--ink);padding:28px;width:min(560px,92vw);max-height:86vh;overflow:auto}
+#modal input,#modal textarea,#modal select{width:100%;margin:4px 0 10px;padding:7px;border:1px solid #888;background:#fff}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--lime);color:#000;padding:10px 18px;display:none;z-index:10;font:700 12px "Courier New"}
+#auth{position:fixed;inset:0;background:var(--bg);z-index:8;display:flex;align-items:center;justify-content:center}
+#auth .box{background:var(--paper);color:var(--ink);padding:30px;width:400px;max-height:94vh;overflow:auto}
+#auth input,#auth select{width:100%;padding:8px;margin:3px 0 8px}
+#notif{position:absolute;top:52px;right:60px;background:var(--paper);color:var(--ink);width:280px;padding:12px;display:none;z-index:5}
+.warn{background:#e79ac4;color:#000;padding:8px;margin:8px 0}
+@media(max-width:800px){#app{grid-template-columns:1fr;grid-template-rows:auto 1fr auto}#nav{grid-row:auto;display:flex;position:fixed;bottom:0;left:0;right:0;z-index:5;background:#000;padding:4px}
+#nav .logo{display:none}#top,#thumbs{grid-column:1}#top input{width:150px}.book{grid-template-columns:1fr}.pg.l{display:none}.pg.r{border-radius:8px}#stage{padding:8px 60px 60px 8px}#thumbs{display:none}}
+
+/* ===== v1 ENHANCED: cobalt Y2K OS + ticket + ID-card + plastic-wrap editorial ===== */
+:root{--cob:#2a1fe0;--sky:#7db8ff;--lime:#b6f23a;--cream:#f3f1ea;--plastic:#f2b5d0}
+body{background:radial-gradient(#2a1fe055 1px,transparent 1.5px) 0 0/22px 22px,radial-gradient(circle at 20% 15%,#1b1470,transparent 45%),radial-gradient(circle at 85% 90%,#0f2a6b,transparent 45%),#05051a}
+#stage:before{content:"";position:absolute;inset:0;background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='700' height='420'><path d='M5 330 C90 40 130 400 210 110 S340 360 400 70 S540 320 690 30 M30 60 C200 200 260 20 420 190 S600 90 690 250' fill='none' stroke='white' stroke-width='1.1'/></svg>");opacity:.22;pointer-events:none}
+.book{z-index:1}
+.book:after{content:"";position:absolute;inset:0;pointer-events:none;z-index:6;mix-blend-mode:screen;background:linear-gradient(115deg,transparent 18%,#ffffff45 25%,transparent 31%),linear-gradient(72deg,transparent 58%,#ffffff33 63%,transparent 69%),radial-gradient(circle at 85% 12%,#ffffff40,transparent 28%)}
+.pg{background-color:var(--cream);background-image:linear-gradient(#2a1fe014 1px,transparent 1px),linear-gradient(90deg,#2a1fe014 1px,transparent 1px),radial-gradient(#0000000f 1px,transparent 1.2px);background-size:24px 24px,24px 24px,4px 4px}
+.pg.l{padding-left:46px;box-shadow:inset -22px 0 26px -20px #0007}.pg.r{box-shadow:inset 22px 0 26px -20px #0007}
+.pg.l:before{content:"TRACK 01 : SKILLS ON FILE · TRACK 02 : PROOF OF WORK · CAPABILITY RECORD";position:absolute;left:0;top:0;bottom:0;width:24px;background:#fff;border-right:2px solid var(--cob);writing-mode:vertical-rl;font:700 8px "Courier New";letter-spacing:.18em;padding:10px 0;color:#111;overflow:hidden;white-space:nowrap}
+.pg.r:before{content:"";position:absolute;right:16px;top:12px;width:34px;height:34px;background:var(--cob);clip-path:polygon(50% 0,61% 39%,100% 50%,61% 61%,50% 100%,39% 61%,0 50%,39% 39%)}
+.pg.r:after{content:"©2026 SKILL PASSPORT · YOUR WORK. YOUR PROOF.";position:absolute;left:26px;bottom:6px;font:700 8px "Courier New";letter-spacing:.12em;color:var(--cob)}
+.display{font:800 46px/.88 "Helvetica Neue",Helvetica,Arial,sans-serif;letter-spacing:-.055em;color:var(--cob);text-shadow:2px 2px 0 var(--lime)}
+#nav .logo,.display[style*="color:#fff"]{color:#fff;text-shadow:2px 2px 0 var(--cob)}
+#nav .logo{font:800 22px/.95 "Helvetica Neue",Arial,sans-serif;letter-spacing:-.04em}
+#nav button.on{background:var(--cob);color:#fff;clip-path:polygon(0 0,96% 0,100% 20%,97% 50%,100% 80%,96% 100%,0 100%);box-shadow:4px 0 0 var(--lime)}
+#nav button:hover{color:#fff;transform:translateX(4px)}
+#top input{background:var(--cream);color:#111;border:2px solid var(--cob);border-radius:0;box-shadow:3px 3px 0 var(--lime);font:700 11px "Courier New";letter-spacing:.06em}
+.doc{background:#fff;border:2px solid var(--cob);padding:26px 12px 10px;margin:12px 0;box-shadow:4px 4px 0 var(--sky);transform:none!important;position:relative}
+.doc:before{content:"▮ SKILL_PASSPORT.EXE            ─ □ ✕";position:absolute;top:0;left:0;right:0;height:17px;background:var(--cob);color:#fff;font:9px/17px "Courier New";padding:0 6px;white-space:nowrap;overflow:hidden}
+.doc:hover{box-shadow:6px 6px 0 var(--lime)}
+.btn{background:var(--cob);color:#fff;border:2px solid var(--cob);box-shadow:3px 3px 0 var(--lime);letter-spacing:.08em}
+.btn.alt{background:var(--lime);color:#111;box-shadow:3px 3px 0 var(--cob)}
+.btn:hover{transform:translate(-2px,-2px)}
+.stamp{border:2px solid var(--cob);color:var(--cob);background:linear-gradient(transparent 55%,#b6f23aaa 55%);border-radius:2px}
+.stamp:nth-child(2n){border-color:#111;color:#111}
+.pill{background:var(--lime);color:#111}.sim{color:var(--cob);text-shadow:2px 2px 0 var(--lime);font-family:"Helvetica Neue",Arial;font-weight:800;letter-spacing:-.04em}
+.tape{background:repeating-linear-gradient(90deg,#b6f23acc 0 8px,#b6f23a99 8px 10px);border:1px dashed #0003}
+.warn{background:#fff;color:#111;border:2px solid #e11;padding-left:36px;position:relative;font-weight:700}
+.warn:before{content:"⚠";position:absolute;left:8px;top:4px;color:#e11;font-size:20px}
+.empty{background:var(--cob);color:#fff;text-align:left;border:2px solid #111;box-shadow:5px 5px 0 var(--lime);padding:22px}
+.empty:before{content:":(";display:block;font:800 40px "Helvetica Neue",Arial;letter-spacing:-.05em}
+.empty .display{color:#fff;text-shadow:2px 2px 0 #000}.empty .btn{background:#fff;color:var(--cob);border-color:#fff}
+.th{background-color:var(--cream);background-image:linear-gradient(#2a1fe018 1px,transparent 1px),linear-gradient(90deg,#2a1fe018 1px,transparent 1px);background-size:10px 10px;border:2px solid var(--cob);color:var(--cob);box-shadow:3px 3px 0 var(--sky)}
+.th.on{background-color:var(--lime);box-shadow:3px 3px 0 var(--cob)}
+.arrow{color:var(--lime)}
+.tab{clip-path:polygon(8% 0,100% 0,100% 100%,6% 100%,0 70%,5% 40%)}
+#modal .box,#auth .box{background:var(--cream);border:2px solid var(--cob);padding-top:44px;box-shadow:8px 8px 0 var(--lime);position:relative}
+#modal .box:before,#auth .box:before{content:"SKILL_PASSPORT.EXE                     ─ □ ✕";position:absolute;top:0;left:0;right:0;height:22px;background:var(--cob);color:#fff;font:10px/22px "Courier New";padding:0 8px;white-space:nowrap;overflow:hidden}
+#toast{background:var(--lime);border:2px solid #111;box-shadow:3px 3px 0 var(--cob)}
+/* new identity artifacts */
+.tkt{display:flex;justify-content:space-between;background:var(--lime);border:2px solid var(--cob);padding:5px 9px;font:700 11px "Courier New";letter-spacing:.08em;margin:0 0 10px;transform:rotate(-1.2deg);position:relative}
+.tkt:after{content:"";position:absolute;left:62%;top:0;bottom:0;border-left:2px dashed var(--cob)}
+.cdd{width:120px;height:120px;border-radius:50%;background:radial-gradient(circle,var(--cream) 0 13%,#9aa 13% 17%,transparent 17%),conic-gradient(from 20deg,#f0a3d0,#7db8ff,#b6f23a,#fff,#7db8ff,#f0a3d0);box-shadow:0 0 0 3px #fff,0 0 0 5px #2a1fe0;animation:spin 10s linear infinite;margin:10px 0}
+@keyframes spin{to{transform:rotate(360deg)}}
+.idc{background:#fff;border:1.5px solid #111;border-radius:6px;padding:8px;transform:rotate(-3deg);box-shadow:4px 5px 0 var(--plastic);width:88%;margin:6px 0 12px;font:10px "Courier New"}
+.idc .idh{display:flex;justify-content:space-between;border-bottom:1.5px solid #111;padding-bottom:4px;margin-bottom:6px;font-weight:700;letter-spacing:.1em}
+.idc .idb{display:flex;gap:8px}.idc .idp{width:64px;height:78px;background:radial-gradient(#111 1.2px,transparent 1.6px) 0 0/5px 5px,#ddd;display:flex;align-items:flex-end;justify-content:center;font-size:8px}
+.idc b{display:block;font:700 13px "Helvetica Neue",Arial;text-transform:uppercase;margin-bottom:3px}
+.sky{height:80px;margin:6px 0;position:relative;background:radial-gradient(circle at 25% 60%,#fff 0 14%,transparent 15%),radial-gradient(circle at 42% 50%,#fff 0 17%,transparent 18%),radial-gradient(circle at 62% 62%,#fff 0 13%,transparent 14%),linear-gradient(#2f7bff,#bfe0ff);border:2px solid var(--cob)}
+.sky:after{content:"✈";position:absolute;right:12px;top:8px;color:#fff;font-size:22px;transform:rotate(-20deg)}
+#deco span{position:fixed;z-index:9;pointer-events:none;user-select:none}
+#deco .st{background:var(--cob);clip-path:polygon(50% 0,61% 39%,100% 50%,61% 61%,50% 100%,39% 61%,0 50%,39% 39%);animation:tw 3.2s ease-in-out infinite}
+@keyframes tw{50%{transform:scale(1.3) rotate(15deg);opacity:.7}}
+#deco .lb{font:700 10px "Courier New";letter-spacing:.1em;padding:3px 8px;background:#fff;color:var(--cob);border:2px solid var(--cob);box-shadow:2px 2px 0 var(--lime)}
+@media(max-width:800px){#deco{display:none}.pg.l:before{display:none}}
+</style></head><body>
+<div id="auth"></div><div id="app" style="display:none">
+<div id="nav"></div><div id="top"></div><div id="stage"></div><div id="thumbs"></div></div>
+<div id="modal"></div><div id="toast"></div>
+<script>
+const API=(window.VITE_API_URL||"")+"/api";
+let S={token:localStorage.tk||"",user:null,profile:null,opps:[],status:{applied:[],saved:[]},page:0,view:"passport",mlDown:false,matched:null,open:null,cand:null,authMode:"login"};
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const toast=m=>{const t=$("toast");t.textContent=m;t.style.display="block";setTimeout(()=>t.style.display="none",2200)};
+async function api(p,o={}){const h={Authorization:"Bearer "+S.token};let b=o.body;
+ if(b&&!(b instanceof FormData)){h["Content-Type"]="application/json";b=JSON.stringify(b)}
+ const r=await fetch(API+p,{method:o.method||"GET",headers:h,body:b});
+ if(!r.ok){let d="";try{d=(await r.json()).detail}catch{}throw new Error(d||r.status)}return r.json()}
+const PAGES=[["identity","IDENTITY","#f0a3d0"],["skills","SKILLS","#9fb8f0"],["projects","PROJECTS","#a8dcc0"],["achievements","ACHIEVEMENTS","#d4e86a"],["portfolio","PORTFOLIO","#c4b0f0"],["evidence","EVIDENCE","#ddd"],["opportunities","OPPORTUNITIES","#f0a3d0"],["challenges","CHALLENGES","#9fb8f0"]];
+const CH=[{id:"py",title:"Python Logic Challenge",skill:"python",q:"What does len([1,2,3][1:]) return?",a:["2","3","1"],c:0},
+{id:"sql",title:"SQL Challenge",skill:"sql",q:"Which clause filters rows AFTER grouping?",a:["WHERE","HAVING","ORDER BY"],c:1},
+{id:"cv",title:"Computer Vision Challenge",skill:"computer vision",q:"Which operation reduces image noise?",a:["Gaussian blur","Thresholding","Inversion"],c:0}];
+
+/* ---------- auth ---------- */
+function authUI(){const m=S.authMode,su=m=="signup";const role=$("a_role")?.value||"student";
+ $("auth").innerHTML=`<div class="box"><div class="display">Skill<br>Passport</div><p class="mono">${su?"Sign up":m=="forgot"?"Reset password":"Log in"}</p>
+ ${su?`<select id="a_role" onchange="authUI()"><option value="student">Student</option><option value="creator" ${role=="creator"?"selected":""}>Opportunity Creator</option></select><input id="a_name" placeholder="Full name">`:""}
+ <input id="a_email" placeholder="Email">${m!="forgot"?`<input id="a_pw" type="password" placeholder="Password">`:""}
+ ${su&&role=="student"?`<input id="a_field" placeholder="Department / field"><input id="a_year" placeholder="Year">`:""}
+ ${su&&role=="creator"?`<input id="a_org" placeholder="Organization"><select id="a_ot"><option>Club</option><option>Faculty</option><option>Placement team</option><option>Organization</option></select><input id="a_pos" placeholder="Your role">`:""}
+ <div class="warn" id="a_err" style="display:none"></div>
+ <button class="btn" onclick="doAuth()">${su?"CREATE PASSPORT":m=="forgot"?"SEND RESET":"LOG IN"}</button>
+ <p class="mono"><a href="#" onclick="S.authMode='login';authUI()">Login</a> · <a href="#" onclick="S.authMode='signup';authUI()">Sign up</a> · <a href="#" onclick="S.authMode='forgot';authUI()">Forgot</a></p></div>`}
+async function doAuth(){const v=i=>$(i)?.value?.trim(),e=$("a_err");e.style.display="none";
+ try{if(S.authMode=="forgot"){const r=await api("/forgot-password",{method:"POST",body:{email:v("a_email")}});toast(r.message);return}
+ let r;if(S.authMode=="signup"){if(!v("a_name")||!v("a_email")||!v("a_pw"))throw Error("Fill name, email, password");
+  r=await api("/signup",{method:"POST",body:{name:v("a_name"),email:v("a_email"),password:v("a_pw"),role:v("a_role"),field:v("a_field")||"",year:v("a_year")||"",org:v("a_org")||"",org_type:v("a_ot")||"",position:v("a_pos")||""}})}
+ else r=await api("/login",{method:"POST",body:{email:v("a_email"),password:v("a_pw")}});
+ S.token=r.token;localStorage.tk=r.token;await boot()}catch(x){e.textContent=x.message=="Failed to fetch"?"ML service unavailable":x.message;e.style.display="block"}}
+function logout(){localStorage.removeItem("tk");S.token="";S.user=null;$("app").style.display="none";$("auth").style.display="flex";S.authMode="login";authUI()}
+async function boot(){try{const r=await api("/profile");S.user=r.user;S.profile=r.profile;S.opps=await api("/opportunities");S.status=await api("/my-status");S.mlDown=false}
+ catch(x){if(!S.user){logout();return}S.mlDown=true}
+ $("auth").style.display="none";$("app").style.display="grid";S.view=S.user.role=="creator"?"chome":"passport";chrome();render();if(S.user.role=="student")loadMatches()}
+async function loadMatches(){try{S.matched=await api("/match-opportunities",{method:"POST",body:S.profile});S.mlDown=false}catch{S.matched=null;S.mlDown=true}render()}
+async function saveProfile(){try{await api("/profile",{method:"PUT",body:S.profile});loadMatches()}catch{toast("Save failed — ML service unavailable")}}
+
+/* ---------- chrome ---------- */
+function chrome(){const st=S.user.role=="student";
+ const items=st?[["passport","My Passport"],["challenges","Challenges"],["discover","Discover"],["opps","Opportunities"]]:[["chome","Home"],["post","Post Opportunity"],["mine","My Opportunities"],["cands","Candidates"],["profile","Profile"]];
+ $("nav").innerHTML=`<div class="logo">✦ SKILL<br>PASSPORT</div>`+items.map(([k,l])=>`<button data-k="${k}" class="${S.view==k?"on":""}" onclick="go('${k}')">${l}</button>`).join("")+`<p class="hand" style="margin-top:40px;font-size:18px">your skills<br>have a story ↗</p>`;
+ $("top").innerHTML=`<input id="q" placeholder="SEARCH PEOPLE / SKILLS / OPPORTUNITIES" onkeydown="if(event.key=='Enter')go('discover',this.value)">
+ <button class="btn alt" onclick="$('notif').style.display=$('notif').style.display=='block'?'none':'block'">🔔</button>
+ <button class="btn alt" onclick="profileModal()">${esc(S.user.name.split(" ")[0])} ▾</button><div id="notif"></div>`;
+ $("notif").innerHTML=`<b class="mono">Notifications</b>`+[...S.status.applied.map(i=>"Application submitted: "+(S.opps.find(o=>o.id==i)?.title||i)),...(S.matched&&S.matched[0]?["New opportunity matches your profile: "+S.matched[0].title]:[]),...(S.profile.evidence||[]).filter(e=>e.type=="CHALLENGE RESULT").map(e=>"Challenge result available: "+e.title)].map(t=>`<p>• ${esc(t)}</p>`).join("")||"<p>Nothing yet.</p>"}
+function go(v,q){S.view=v;S.open=null;S.cand=null;S.q=q||"";chrome();render()}
+function profileModal(){modal(`<div class="display" style="font-size:30px">Profile</div><p><b>${esc(S.user.name)}</b><br>${esc(S.user.email)}<br>Role: ${esc(S.user.role)}</p>
+ <button class="btn" onclick="editProfile()">EDIT PROFILE</button><button class="btn alt" onclick="logout();closeM()">LOGOUT</button>`)}
+function editProfile(){modal(`<h3>Edit profile</h3><input id="e_n" value="${esc(S.user.name)}"><input id="e_f" value="${esc(S.user.field||"")}" placeholder="Field"><button class="btn" onclick="S.user.name=$('e_n').value;S.user.field=$('e_f').value;toast('Saved locally for this session');closeM();chrome();render()">SAVE</button>`)}
+function modal(h){$("modal").innerHTML=`<div class="box">${h}<p><button class="btn" onclick="closeM()">CLOSE</button></p></div>`;$("modal").style.display="flex"}
+function closeM(){$("modal").style.display="none"}
+
+/* ---------- passport ---------- */
+const P=()=>S.profile;
+const emp=(t,k)=>`<div class="empty"><div class="display" style="font-size:28px">This page is waiting<br>for your story.</div><p><button class="btn" onclick="${k}">${t}</button></p></div>`;
+function pageContent(i){const p=P(),u=S.user,k=PAGES[i][0];
+ if(k=="identity")return[`<div class="tkt"><span>経歴 → 未来</span><span>SKILL PASSPORT</span></div><div class="mono">Student profile</div><div class="display" style="margin:12px 0;font-size:50px">${esc(u.name)}</div><p class="mono">${esc(u.field||"—")} · Year ${esc(u.year||"—")}</p><div class="cdd"></div><div class="barcode"></div><p class="mono">Issued ${new Date().getFullYear()}</p>`,
+  `<div class="idc"><div class="idh"><span>IDENTITY CARD</span><span>ID ${esc(u.id)}</span></div><div class="idb"><div class="idp">PHOTO</div><div>Name<b>${esc(u.name)}</b>Field<b>${esc(u.field||"—")}</b></div></div><div class="barcode" style="width:100%;height:20px;margin-top:6px"></div></div><div class="sky"></div><h3 class="mono">Career profile</h3>${p.skills.length?`<p class="mono">Skills on file</p>${p.skills.slice(0,6).map(x=>`<span class="stamp">${esc(x)}</span>`).join("")}`:emp("ADD RESUME","resumeModal()")}<p><button class="btn" onclick="resumeModal()">ADD RESUME</button><button class="btn alt" onclick="materialModal()">ADD MATERIAL</button></p>`];
+ if(k=="skills")return[`<div class="display">Skills</div><p class="mono">${p.skills.length} stamped</p><p><button class="btn" onclick="addSkill()">+ ADD SKILL</button></p>`,
+  p.skills.length?p.skills.map((s,j)=>`<span class="stamp">${esc(s)}<b onclick="editSkill(${j})">✎</b><b onclick="delItem('skills',${j})">×</b></span>`).join(""):emp("ADD SKILL","addSkill()")];
+ if(k=="projects"||k=="achievements"){const L=p[k];return[`<div class="display">${k}</div><p><button class="btn" onclick="itemModal('${k}')">+ ADD</button></p>`,
+  L.length?L.map((x,j)=>`<div class="doc" onclick="itemView('${k}',${j})"><b>${esc(x.title)}</b><br>${esc((x.description||"").slice(0,90))}<br><span class="mono">${esc(x.tech||x.kind||"")}</span></div>`).join(""):emp("ADD "+k.slice(0,-1).toUpperCase(),`itemModal('${k}')`)]}
+ if(k=="portfolio")return[`<div class="display">Portfolio</div><p><button class="btn" onclick="linkModal()">+ ADD LINK</button></p>`,
+  p.links.length?p.links.map((x,j)=>`<div class="doc"><span class="pill">${esc(x.kind)}</span><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.url)}</a> <b style="cursor:pointer" onclick="delItem('links',${j})">×</b></div>`).join(""):emp("ADD LINK","linkModal()")];
+ if(k=="evidence"){const ev=evidence();return[`<div class="display">Evidence</div><p class="mono">Claim → Experience → Capability</p><p class="mono">Nothing here is marked VERIFIED unless verified.</p>`,ev.length?ev.map(e=>`<div class="doc"><span class="pill">${e.type}</span><span class="pill" style="background:var(--lav)">${e.status}</span> ${esc(e.title)}</div>`).join(""):emp("ADD MATERIAL","materialModal()")]}
+ if(k=="opportunities"){const m=(S.matched||[]).slice(0,4);return[`<div class="display">Matches</div><p class="mono">Similarity match · from the Python TF-IDF model</p>${S.mlDown?'<div class="warn">ML SERVICE UNAVAILABLE</div>':""}`,m.length?m.map(oppDoc).join(""):(S.mlDown?"":emp("ADD SKILLS","addSkill()"))]}
+ if(k=="challenges")return[`<div class="display">Challenges</div>`,CH.map(c=>`<div class="doc"><b>${c.title}</b><br><span class="mono">Tests ${c.skill}</span> <button class="btn" onclick="startCh('${c.id}')">START CHALLENGE</button></div>`).join("")]}
+function evidence(){const p=P();return[...p.projects.map(x=>({type:"PROJECT",status:x.link?"LINKED":"SELF-REPORTED",title:x.title})),...p.achievements.map(x=>({type:"CERTIFICATE",status:"SELF-REPORTED",title:x.title})),...p.links.map(x=>({type:x.kind.toUpperCase()=="GITHUB"?"GITHUB":"PORTFOLIO",status:"LINKED",title:x.url})),...(p.evidence||[])]}
+function oppDoc(o){return`<div class="doc" onclick="openOpp('${o.id}')"><span class="sim">${o.similarity!=null?(o.similarity*100).toFixed(2)+"%":""}</span> <span class="mono">Similarity match</span><br><b>${esc(o.title)}</b> <span class="mono">· ${esc(o.type)}</span></div>`}
+function render(){const st=$("stage"),th=$("thumbs");
+ if(S.view=="passport"){const [l,r]=pageContent(S.page);
+  st.innerHTML=`<div class="book flip" id="bk"><div class="pg l"><div class="tape"></div>${l}</div><div class="pg r">${r}</div></div><div class="tabs">${PAGES.map((p,i)=>`<button class="tab ${i==S.page?"on":""}" style="background:${p[2]}" onclick="turn(${i})">0${i+1} ${p[1]}</button>`).join("")}</div>`;
+  th.innerHTML=`<button class="arrow" onclick="turn(S.page-1)">‹</button>${PAGES.map((p,i)=>`<button class="th ${i==S.page?"on":""}" onclick="turn(${i})">0${i+1}<br>${p[1]}</button>`).join("")}<button class="arrow" onclick="turn(S.page+1)">›</button>`;return}
+ th.innerHTML="";st.innerHTML=`<div class="book flip"><div class="pg l"><div class="tape"></div>${leftFor()}</div><div class="pg r">${rightFor()}</div></div>`}
+function turn(i){S.page=(i+PAGES.length)%PAGES.length;render()}
+document.addEventListener("keydown",e=>{if(S.view!="passport"||/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)||!S.user)return;if(e.key=="ArrowRight")turn(S.page+1);if(e.key=="ArrowLeft")turn(S.page-1)});
+
+/* ---------- editing ---------- */
+function addSkill(){modal(`<h3>Add skill</h3><input id="s_v"><button class="btn" onclick="const v=$('s_v').value.trim().toLowerCase();if(v&&!P().skills.includes(v)){P().skills.push(v);saveProfile();toast('Skill added')}closeM();render()">ADD</button>`)}
+function editSkill(j){modal(`<h3>Edit skill</h3><input id="s_v" value="${esc(P().skills[j])}"><button class="btn" onclick="P().skills[${j}]=$('s_v').value.trim().toLowerCase();saveProfile();closeM();render()">SAVE</button>`)}
+function delItem(k,j){P()[k].splice(j,1);saveProfile();render()}
+function itemModal(k,j){const x=j!=null?P()[k][j]:{},pj=k=="projects";
+ modal(`<h3>${j!=null?"Edit":"Add"} ${k.slice(0,-1)}</h3><input id="i_t" placeholder="Title" value="${esc(x.title||"")}"><textarea id="i_d" placeholder="Description">${esc(x.description||"")}</textarea>
+ ${pj?`<input id="i_x" placeholder="Technologies" value="${esc(x.tech||"")}"><input id="i_r" placeholder="Role" value="${esc(x.role||"")}"><input id="i_l" placeholder="Link" value="${esc(x.link||"")}">`:`<select id="i_k">${["Certificate","Hackathon","Competition","Award","Academic"].map(o=>`<option ${x.kind==o?"selected":""}>${o}</option>`).join("")}</select>`}
+ <button class="btn" onclick="saveItem('${k}',${j??-1})">SAVE</button>`)}
+function saveItem(k,j){const t=$("i_t").value.trim();if(!t){toast("Title required");return}
+ const o=k=="projects"?{title:t,description:$("i_d").value,tech:$("i_x").value,role:$("i_r").value,link:$("i_l").value}:{title:t,description:$("i_d").value,kind:$("i_k").value};
+ j>=0?P()[k][j]=o:P()[k].push(o);saveProfile();closeM();render();toast("Saved")}
+function itemView(k,j){const x=P()[k][j];modal(`<div class="display" style="font-size:32px">${esc(x.title)}</div><p>${esc(x.description)}</p><p class="mono">${esc(x.tech||x.kind||"")} ${x.role?"· "+esc(x.role):""}</p>${x.link?`<a href="${esc(x.link)}" target="_blank" rel="noopener">${esc(x.link)}</a>`:""}<p><button class="btn" onclick="itemModal('${k}',${j})">EDIT</button><button class="btn alt" onclick="if(confirm('Delete?')){delItem('${k}',${j});closeM()}">DELETE</button></p>`)}
+function linkModal(){modal(`<h3>Add link</h3><select id="l_k">${["GitHub","Portfolio","LinkedIn","Behance","Dribbble","Other"].map(o=>`<option>${o}</option>`).join("")}</select><input id="l_u" placeholder="https://…"><button class="btn" onclick="const u=$('l_u').value.trim();if(!/^https?:\\/\\//.test(u)){toast('Enter a full URL');return}P().links.push({kind:$('l_k').value,url:u});saveProfile();closeM();render()">ADD</button>`)}
+function materialModal(){modal(`<h3>Add material</h3>${[["ADD RESUME","resumeModal()"],["ADD PROJECT","itemModal('projects')"],["ADD CERTIFICATE","itemModal('achievements')"],["ADD ACHIEVEMENT","itemModal('achievements')"],["ADD PORTFOLIO LINK","linkModal()"],["ADD GITHUB LINK","linkModal()"]].map(([a,b])=>`<button class="btn" onclick="${b}">${a}</button>`).join("")}`)}
+function resumeModal(){modal(`<h3>Upload resume (PDF or TXT)</h3><input type="file" id="rf" accept=".pdf,.txt"><button class="btn" onclick="analyze()">UPLOAD</button><div id="rs"></div>`)}
+async function analyze(){const f=$("rf").files[0];if(!f){toast("Choose a file");return}
+ $("rs").innerHTML="<p class='mono'>Analyzing… extracting…</p>";const fd=new FormData();fd.append("file",f);
+ try{const r=await api("/analyze-resume",{method:"POST",body:fd});S.pending=r;
+  $("rs").innerHTML=`<p class="mono">Skills found — review &amp; edit (comma separated)</p><textarea id="rk">${esc(r.skills.join(", "))}</textarea><button class="btn" onclick="const a=$('rk').value.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);P().skills=[...new Set([...P().skills,...a])];P().resume_text=S.pending.text;saveProfile();closeM();render();toast('Added to passport')">ADD TO PASSPORT</button>`}
+ catch(x){$("rs").innerHTML=`<div class="warn">${x.message=="Failed to fetch"?"ML SERVICE UNAVAILABLE":esc(x.message)}</div>`}}
+
+/* ---------- challenges ---------- */
+function startCh(id){const c=CH.find(x=>x.id==id);modal(`<h3>${c.title}</h3><p>${c.q}</p>${c.a.map((a,i)=>`<label><input type="radio" name="ch" value="${i}" style="width:auto"> ${a}</label><br>`).join("")}<button class="btn" onclick="submitCh('${id}')">SUBMIT</button>`)}
+function submitCh(id){const c=CH.find(x=>x.id==id),v=document.querySelector("input[name=ch]:checked");if(!v){toast("Pick an answer");return}
+ const ok=+v.value==c.c;P().evidence=P().evidence||[];P().evidence.push({type:"CHALLENGE RESULT",status:"CHALLENGE RESULT",title:`${c.title}: ${ok?"PASSED":"NOT PASSED"}`});
+ saveProfile();closeM();toast(ok?"Correct — added to Evidence":"Incorrect — result stored in Evidence");chrome();render()}
+
+/* ---------- opportunities ---------- */
+async function openOpp(id){const o=S.opps.find(x=>x.id==id);S.open=o;const ap=S.status.applied.includes(id),sv=S.status.saved.includes(id),st=S.user.role=="student";
+ modal(`<div class="mono">${esc(o.type)} · ${esc(o.org)}</div><div class="display" style="font-size:34px">${esc(o.title)}</div><p>${esc(o.description)}</p><p>${(o.skills||[]).map(s=>`<span class="stamp">${esc(s)}</span>`).join("")}</p>
+ <p class="mono">Deadline: ${esc(o.deadline||"—")} · Contact: ${esc(o.contact||"—")}</p>${st?`<button class="btn" ${ap?"disabled":""} onclick="applyTo('${id}')">${ap?"APPLICATION SUBMITTED":"APPLY"}</button><button class="btn alt" onclick="saveOpp('${id}')">${sv?"SAVED ✓":"SAVE"}</button>`:""}`)}
+async function applyTo(id){try{const r=await api(`/opportunities/${id}/apply`,{method:"POST"});S.status.applied.push(id);toast(r.status);closeM();chrome()}catch(x){toast(x.message)}}
+async function saveOpp(id){try{const r=await api(`/opportunities/${id}/save`,{method:"POST"});S.status=await api("/my-status");toast(r.saved?"Saved":"Removed");closeM()}catch(x){toast(x.message)}}
+function studentOpps(){const m=S.matched||S.opps;return m}
+function leftFor(){const v=S.view;
+ if(v=="challenges")return`<div class="display">Challenges</div>`+CH.map(c=>`<div class="doc"><b>${c.title}</b><br><span class="mono">Tests ${c.skill}</span><br><button class="btn" onclick="startCh('${c.id}')">START CHALLENGE</button></div>`).join("");
+ if(v=="opps")return`<div class="display">Opportunities</div><p class="mono">Similarity match</p>${S.mlDown?'<div class="warn">ML SERVICE UNAVAILABLE — showing unranked list</div>':""}`;
+ if(v=="discover")return`<div class="display">Discover</div><input id="dq" value="${esc(S.q||"")}" placeholder="python, club…" style="width:100%;padding:8px" oninput="S.q=this.value;render();$('dq').focus()">`;
+ if(v=="chome")return`<div class="display">Hello,<br>${esc(S.user.name.split(" ")[0])}</div><p class="mono">${esc(S.user.org)} · ${esc(S.user.position)}</p><div class="barcode"></div><p class="hand" style="color:#444;font-size:20px">find your people ↗</p>`;
+ if(v=="post")return`<div class="display">Post<br>opportunity</div><p class="mono">Skills feed the ML matching.</p>`;
+ if(v=="mine")return`<div class="display">My<br>opportunities</div>`;
+ if(v=="cands")return`<div class="display">Matched<br>students</div><p class="mono">Profile similarity — not a talent ranking</p>`+mineOpps().map(o=>`<button class="btn" onclick="showCands('${o.id}')">${esc(o.title)}</button>`).join("");
+ if(v=="profile")return`<div class="display">Profile</div><p>${esc(S.user.name)}<br>${esc(S.user.email)}</p>`;return""}
+const mineOpps=()=>S.opps.filter(o=>o.creator==S.user.id);
+function rightFor(){const v=S.view;
+ if(v=="opps")return studentOpps().map(oppDoc).join("");
+ if(v=="challenges")return`<p class="mono">Results are stored as CHALLENGE RESULT evidence.</p>`;
+ if(v=="discover"){const q=(S.q||"").toLowerCase();if(!q)return`<p class="mono">Search people, skills, projects, opportunities, challenges.</p>`;
+  const h=[...S.opps.filter(o=>(o.title+o.description+(o.skills||[]).join(" ")+o.type).toLowerCase().includes(q)).map(o=>`<div class="doc" onclick="openOpp('${o.id}')"><span class="pill">OPPORTUNITY</span>${esc(o.title)}</div>`),
+   ...CH.filter(c=>(c.title+c.skill).toLowerCase().includes(q)).map(c=>`<div class="doc" onclick="startCh('${c.id}')"><span class="pill">CHALLENGE</span>${c.title}</div>`),
+   ...P().skills.filter(s=>s.includes(q)).map(s=>`<div class="doc"><span class="pill">SKILL</span>${esc(s)}</div>`),
+   ...P().projects.filter(p=>(p.title+p.description+p.tech).toLowerCase().includes(q)).map(p=>`<div class="doc"><span class="pill">PROJECT</span>${esc(p.title)}</div>`)];
+  return h.join("")||emp0()}
+ if(v=="chome")return`<p><button class="btn" onclick="go('post')">POST OPPORTUNITY</button><button class="btn" onclick="go('mine')">MY OPPORTUNITIES (${mineOpps().length})</button><button class="btn" onclick="go('cands')">CANDIDATES</button></p>`;
+ if(v=="post")return oppForm();
+ if(v=="mine")return mineOpps().map(o=>`<div class="doc"><b>${esc(o.title)}</b> <span class="mono">${esc(o.type)}</span><br><button class="btn" onclick="editOpp('${o.id}')">EDIT</button><button class="btn alt" onclick="delOpp('${o.id}')">DELETE</button></div>`).join("")||emp("POST OPPORTUNITY","go('post')");
+ if(v=="cands")return S.cand?S.cand.map(c=>`<div class="doc" onclick="candView('${c.id}')"><span class="sim">${(c.similarity*100).toFixed(2)}%</span> <span class="mono">Profile similarity</span><br><b>${esc(c.name)}</b> · ${esc(c.field)}<br>${c.profile.skills.map(s=>`<span class="pill">${esc(s)}</span>`).join("")}</div>`).join("")||"<p>No students yet.</p>":`<p class="mono">Pick an opportunity.</p>`;
+ if(v=="profile")return`<button class="btn" onclick="profileModal()">EDIT / LOGOUT</button>`;return""}
+const emp0=()=>`<p class="mono">No results.</p>`;
+function oppForm(o){o=o||{};return`<input id="o_t" placeholder="Title" value="${esc(o.title||"")}"><input id="o_o" placeholder="Organization" value="${esc(o.org||S.user.org||"")}"><textarea id="o_d" placeholder="Description">${esc(o.description||"")}</textarea>
+ <input id="o_s" placeholder="Required skills (comma separated)" value="${esc((o.skills||[]).join(", "))}"><select id="o_y">${["Club","Project","Internship","Team","Research","Competition","Other"].map(t=>`<option ${o.type==t?"selected":""}>${t}</option>`).join("")}</select>
+ <input id="o_dl" type="date" value="${esc(o.deadline||"")}"><input id="o_l" placeholder="Location / online" value="${esc(o.location||"")}"><input id="o_c" placeholder="Contact" value="${esc(o.contact||"")}">
+ <button class="btn" onclick="pubOpp('${o.id||""}')">${o.id?"SAVE CHANGES":"PUBLISH OPPORTUNITY"}</button>`}
+async function pubOpp(id){const b={title:$("o_t").value.trim(),org:$("o_o").value,description:$("o_d").value.trim(),skills:$("o_s").value.split(",").map(s=>s.trim().toLowerCase()).filter(Boolean),type:$("o_y").value,deadline:$("o_dl").value,location:$("o_l").value,contact:$("o_c").value};
+ if(!b.title||!b.description){toast("Title and description required");return}
+ try{await api(id?"/opportunities/"+id:"/opportunities",{method:id?"PUT":"POST",body:b});S.opps=await api("/opportunities");closeM();toast("Published");go("mine")}catch(x){toast(x.message)}}
+function editOpp(id){modal(`<h3>Edit opportunity</h3>${oppForm(S.opps.find(o=>o.id==id))}`)}
+async function delOpp(id){if(!confirm("Delete?"))return;try{await api("/opportunities/"+id,{method:"DELETE"});S.opps=await api("/opportunities");toast("Deleted");render()}catch(x){toast(x.message)}}
+async function showCands(id){try{S.cand=await api(`/opportunities/${id}/candidates`);render()}catch{toast("ML service unavailable")}}
+function candView(id){const c=S.cand.find(x=>x.id==id),p=c.profile;modal(`<div class="mono">Skill Passport</div><div class="display" style="font-size:32px">${esc(c.name)}</div><p class="mono">${esc(c.field)}</p><p>${p.skills.map(s=>`<span class="stamp">${esc(s)}</span>`).join("")}</p>${p.projects.map(x=>`<div class="doc"><b>${esc(x.title)}</b><br>${esc(x.description)}</div>`).join("")}<p class="mono">Evidence: ${(p.evidence||[]).map(e=>esc(e.title)).join("; ")||"none"}</p>`)}
+$("modal").addEventListener("click",e=>{if(e.target.id=="modal")closeM()});
+authUI();if(S.token)boot();
+(function(){const st=[["4%","10%",30],["47%","8%",20],["94%","14%",34],["9%","62%",22],["90%","70%",26],["52%","90%",22]];
+ let h=st.map(([x,y,z])=>`<span class="st" style="left:${x};top:${y};width:${z}px;height:${z}px"></span>`).join("");
+ h+=`<span class="lb" style="left:210px;top:64px;transform:rotate(-4deg)">SKILLS ON FILE ✦</span><span class="lb" style="left:74%;top:calc(100% - 172px);transform:rotate(3deg)">経歴 → 未来</span><span class="lb" style="left:38%;top:calc(100% - 26px);transform:rotate(-2deg)">BUILD. PROVE. CONNECT.</span>`;
+ const d=document.createElement("div");d.id="deco";d.innerHTML=h;document.body.appendChild(d)})();
+</script></body></html>
