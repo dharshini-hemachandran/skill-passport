@@ -45,3 +45,14 @@ The public repository intentionally excludes the resume dataset, generated
 model artifacts, local database, and sample resume because they may contain
 personal or resume-derived information. The sample opportunity list is seeded
 from `data/opportunities.csv`.
+
+## Skill challenges, sharing and review
+
+Students generate short timed challenges from their skills or an opportunity. If
+`ANTHROPIC_API_KEY` is set on the API service, the brief is written by Claude
+(`ANTHROPIC_MODEL` optionally overrides the model); otherwise built-in templates
+with randomised data are used. Submissions record AI-tool use and follow-up
+answers and get an **automated check only** result. They become
+**HUMAN-VERIFIED** only after a reviewer scores the rubric. Students choose who
+can open their full passport (private, applicants only, or any organiser account)
+and whether documents and challenge results are included. Every view is logged.

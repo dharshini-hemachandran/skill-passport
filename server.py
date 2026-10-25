@@ -338,6 +338,8 @@ def get_profile(authorization: str | None = Header(default=None)) -> dict:
 @app.put("/api/profile")
 def put_profile(profile: dict, authorization: str | None = Header(default=None)) -> dict:
     user = current_user(authorization)
+    # Documents are managed only through /api/documents so the client cannot overwrite them.
+    profile["documents"] = db["profiles"].get(user["id"], {}).get("documents", [])
     db["profiles"][user["id"]] = profile
     save_state(db)
     return profile
@@ -532,7 +534,10 @@ def candidates(
         candidate_user = db["users"][user_id]
         if candidate_user["role"] != "student":
             continue
-        visible_profile = {key: value for key, value in profile.items() if key != "resume_text"}
+        from lab import can_view
+        if not can_view(user, user_id):
+            continue  # students appear only after they consent to sharing
+        visible_profile = {key: value for key, value in profile.items() if key not in {"resume_text", "documents"}}
         ranked_candidates.append({
             "id": user_id,
             "name": candidate_user["name"],
@@ -549,3 +554,9 @@ def candidates(
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(ROOT / "static" / "index.html")
+
+
+from lab import pages as lab_pages, router as lab_router  # noqa: E402
+
+app.include_router(lab_router)
+app.include_router(lab_pages)
