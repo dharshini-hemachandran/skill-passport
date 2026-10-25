@@ -1,15 +1,34 @@
 # Skill Passport
 
-A prototype for recording skills and matching student profiles with opportunities.
+A browser-based prototype for building a skills passport, recording projects
+and achievements, and finding campus opportunities.
 
-## Privacy and local data
+## GitHub Pages demo
 
-This public repository contains the application source and the sample
-`data/opportunities.csv` file. It intentionally excludes the resume dataset,
-the generated model artifacts, the local database, and the sample resume
-because those files may contain personal or resume-derived information.
+The static site in `static/` runs without Python, an API server, or the private
+resume dataset. It includes local student and opportunity-creator demos,
+editable passports, challenges, opportunity posting and applications, and
+on-device text-similarity matching.
 
-The local prototype expects `data/resume_data.csv` to generate the model with
-`inspect_data.py` or `simple_ml.py`. The API in `server.py` expects the
-generated `model/tfidf_data.pkl`. Keep those files local and do not commit or
-upload them.
+To deploy:
+
+1. Open the repository's **Settings → Pages**.
+2. Set the build and deployment source to **GitHub Actions**.
+3. Push to `main` (or manually run **Deploy GitHub Pages** under Actions).
+4. Open `https://dharshini-hemachandran.github.io/skill-passport/`.
+
+The workflow publishes `static/` as the site root. GitHub Pages serves this
+frontend only; it does not run `server.py` or provide a shared database.
+
+## Demo limitations and privacy
+
+The Pages demo stores its profiles, resumes, opportunities, and activity in
+the current browser's local storage. There is no secure authentication, cloud
+sync, cross-device access, or shared candidate directory. Do not use real
+passwords or sensitive personal information. Resume analysis accepts plain
+text files only; PDF extraction requires a separately hosted API.
+
+The public repository intentionally excludes the resume dataset, generated
+model artifacts, local database, and sample resume because they may contain
+personal or resume-derived information. The demo uses its built-in sample
+opportunities instead.
