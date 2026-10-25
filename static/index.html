@@ -110,105 +110,22 @@ body{background:radial-gradient(#2a1fe055 1px,transparent 1.5px) 0 0/22px 22px,r
 <div id="auth"></div><div id="app" style="display:none">
 <div id="nav"></div><div id="top"></div><div id="stage"></div><div id="thumbs"></div></div>
 <div id="modal"></div><div id="toast"></div>
-<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/mammoth@1.9.0/mammoth.browser.min.js"></script>
 <script>
-const API="/api";
+const API_BASE=(window.SKILL_PASSPORT_API_URL||(location.hostname==="dharshini-hemachandran.github.io"?"https://skill-passport-api-jqmp.onrender.com":"")).replace(/\/+$/,"");
 let S={token:localStorage.tk||"",user:null,profile:null,opps:[],status:{applied:[],saved:[]},page:0,view:"passport",mlDown:false,matched:null,open:null,cand:null,authMode:"login"};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const toast=m=>{const t=$("toast");t.textContent=m;t.style.display="block";setTimeout(()=>t.style.display="none",2200)};
-const DEMO_SKILLS=["python","java","javascript","c++","sql","html","css","react","machine learning","deep learning","artificial intelligence","data science","data analysis","pandas","numpy","tensorflow","pytorch","computer vision","opencv","nlp","natural language processing","statistics","excel","power bi","tableau","git","github","docker","linux","cybersecurity","networking","figma","ui design","ux design"];
-const DEFAULT_OPPORTUNITIES=[
- ["AI Research Project","Python machine learning NLP data analysis artificial intelligence"],
- ["Data Science Team","Python pandas numpy data analysis machine learning statistics"],
- ["Computer Vision Club","Python computer vision deep learning OpenCV artificial intelligence"],
- ["Web Development Team","HTML CSS JavaScript React frontend web development"],
- ["UI UX Design Club","Figma UI design UX design prototyping visual design"],
- ["Startup Team","Python JavaScript product development leadership communication"],
- ["Cybersecurity Team","Python cybersecurity networking Linux security ethical hacking"],
- ["Data Analytics Project","Python SQL pandas data visualization statistics analytics"]
-];
-function demoDb(){
- const raw=localStorage.getItem("skillPassportDemoV1");
- if(raw)return JSON.parse(raw);
- const db={users:{},profiles:{},opportunities:DEFAULT_OPPORTUNITIES.map(([title,description],i)=>({id:`o${i+1}`,title,description,org:"Campus",type:"Project",skills:DEMO_SKILLS.filter(s=>new RegExp("\\b"+s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"\\b","i").test(description)),deadline:"",contact:"",creator:null})),applications:[],saved:[],sessions:{}};
- localStorage.setItem("skillPassportDemoV1",JSON.stringify(db));return db
-}
-function saveDemoDb(db){localStorage.setItem("skillPassportDemoV1",JSON.stringify(db))}
-function demoSkills(text){return DEMO_SKILLS.filter(s=>new RegExp("\\b"+s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"\\b","i").test(text))}
-function demoVector(text){const words=String(text||"").toLowerCase().match(/[a-z0-9+#]+/g)||[],counts=new Map();for(const w of words)counts.set(w,(counts.get(w)||0)+1);return counts}
-function demoSimilarity(a,b){const av=demoVector(a),bv=demoVector(b);let dot=0,an=0,bn=0;for(const n of av.values())an+=n*n;for(const n of bv.values())bn+=n*n;for(const [w,n] of av)dot+=n*(bv.get(w)||0);return an&&bn?dot/Math.sqrt(an*bn):0}
 async function api(path,o={}){
- const method=o.method||"GET",body=o.body,db=demoDb(),route=path.replace(/^\/api/,""),fail=(status,message)=>{const e=new Error(message);e.status=status;throw e};
- const user=()=>{const uid=db.sessions[(S.token||"").replace("Bearer ","")];if(!uid||!db.users[uid])fail(401,"This browser profile is no longer active. Please sign in again.");return db.users[uid]};
- if(route==="/signup"&&method==="POST"){
-  if(Object.values(db.users).some(u=>u.email.toLowerCase()===body.email.toLowerCase()))fail(400,"A profile with this email already exists in this browser.");
-  const id=crypto.randomUUID(),token=crypto.randomUUID(),u={...body,id};
-  db.users[id]=u;db.profiles[id]={skills:[],projects:[],achievements:[],links:[],evidence:[],resume_text:""};
-  db.sessions[token]=id;saveDemoDb(db);return{token,user:u}
- }
- if(route==="/login"&&method==="POST"){
-  const u=Object.values(db.users).find(x=>x.email.toLowerCase()===body.email.toLowerCase());
-  if(!u)fail(401,"No local profile found for that email. Create a passport in this browser first.");
-  const token=crypto.randomUUID();db.sessions[token]=u.id;saveDemoDb(db);return{token,user:u}
- }
- if(route==="/forgot-password")return{ok:true,message:"This browser-only demo does not use passwords. Sign in with your profile email."};
- if(route==="/profile"){
-  const u=user();if(method==="GET")return{user:u,profile:db.profiles[u.id]};
-  if(method==="PUT"){db.profiles[u.id]=body;saveDemoDb(db);return body}
- }
- if(route==="/user"&&method==="PUT"){
-  const u=user();Object.assign(u,{name:body.name,field:body.field});saveDemoDb(db);return u
- }
- if(route==="/opportunities"&&method==="GET")return db.opportunities;
- if(route==="/opportunities"&&method==="POST"){
-  const u=user();if(!body.title||!body.description)fail(400,"Title and description required");
-  const item={...body,id:"o"+crypto.randomUUID().slice(0,8),creator:u.id};db.opportunities.push(item);saveDemoDb(db);return item
- }
- if(route==="/my-status"){const u=user();return{applied:db.applications.filter(a=>a.user===u.id).map(a=>a.opp),saved:db.saved.filter(a=>a.user===u.id).map(a=>a.opp)}}
- if(route==="/match-opportunities"&&method==="POST"){
-  const text=[...(body.skills||[]),...(body.projects||[]).flatMap(x=>[x.title,x.description,x.tech]),...(body.achievements||[]).map(x=>x.title),body.resume_text].join(" ");
-  return db.opportunities.map(item=>({...item,similarity:demoSimilarity(text,[item.title,item.description,...(item.skills||[])].join(" "))})).sort((a,b)=>b.similarity-a.similarity)
- }
- if(route==="/analyze-resume"&&method==="POST"){
-  const file=body.get("file");if(!file)fail(400,"Choose a resume file.");
-  const extension=file.name.split(".").pop().toLowerCase();let text="";
-  if(extension==="txt")text=await file.text();
-  else if(extension==="pdf"){
-   if(!window.pdfjsLib)fail(503,"PDF reader could not load. Check your internet connection and try again.");
-   pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
-   const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
-   const pages=[];
-   for(let pageNumber=1;pageNumber<=pdf.numPages;pageNumber++){
-    const page=await pdf.getPage(pageNumber),content=await page.getTextContent();
-    pages.push(content.items.map(item=>item.str||"").join(" "));
-   }
-   text=pages.join("\n");
-  }else if(extension==="docx"){
-   if(!window.mammoth)fail(503,"Word document reader could not load. Check your internet connection and try again.");
-   const result=await mammoth.extractRawText({arrayBuffer:await file.arrayBuffer()});text=result.value;
-  }else fail(415,"Supported resume formats are .txt, .pdf, and .docx. Please save older .doc files as .docx.");
-  if(!text.trim())fail(422,"No readable text was found. Scanned PDFs need OCR; try a text-based PDF or .docx file.");
-  return{skills:demoSkills(text),text}
- }
- const match=route.match(/^\/opportunities\/([^/]+)(?:\/(apply|save|candidates))?$/);
- if(match){
-  const [,id,action]=match,index=db.opportunities.findIndex(x=>x.id===id);
-  if(index<0)fail(404,"Opportunity not found.");
-  const item=db.opportunities[index];
-  if(action==="apply"&&method==="POST"){const u=user();if(!db.applications.some(a=>a.opp===id&&a.user===u.id))db.applications.push({opp:id,user:u.id});saveDemoDb(db);return{status:"APPLICATION SUBMITTED"}}
-  if(action==="save"&&method==="POST"){const u=user(),i=db.saved.findIndex(a=>a.opp===id&&a.user===u.id);if(i>=0)db.saved.splice(i,1);else db.saved.push({opp:id,user:u.id});saveDemoDb(db);return{saved:i<0}}
-  if(action==="candidates"){
-   const candidates=Object.values(db.users).filter(u=>u.role==="student"&&u.id!==item.creator).map(u=>{const profile=db.profiles[u.id];const text=[...(profile.skills||[]),...(profile.projects||[]).flatMap(x=>[x.title,x.description,x.tech])].join(" ");return{id:u.id,name:u.name,field:u.field||"",profile,similarity:demoSimilarity(text,[item.title,item.description,...(item.skills||[])].join(" "))}});return candidates.sort((a,b)=>b.similarity-a.similarity)
-  }
-  if(!action&&!method.match(/^(GET|PUT|DELETE)$/))fail(405,"Method not allowed.");
-  if(!action&&method==="GET")return item;
-  const u=user();if(item.creator!==u.id)fail(403,"You can only change your own opportunities.");
-  if(method==="PUT"){Object.assign(item,Object.fromEntries(Object.entries(body).filter(([k])=>!["id","creator"].includes(k))));saveDemoDb(db);return item}
-  if(method==="DELETE"){db.opportunities.splice(index,1);saveDemoDb(db);return{ok:true}}
- }
- fail(404,`Unsupported demo action: ${method} ${route}`)
+ const headers=new Headers(o.headers||{}),token=S.token;
+ if(token)headers.set("Authorization",`Bearer ${token}`);
+ let body=o.body;
+ if(body!==undefined&&!(body instanceof FormData)){headers.set("Content-Type","application/json");body=JSON.stringify(body)}
+ const response=await fetch(`${API_BASE}/api${path}`,{method:o.method||"GET",headers,body});
+ const content=await response.text();let result=null;
+ if(content){try{result=JSON.parse(content)}catch{result=content}}
+ if(!response.ok){const detail=result&&typeof result==="object"?result.detail:result;throw new Error(typeof detail==="string"?detail:`Request failed (${response.status}).`)}
+ return result
 }
 const PAGES=[["identity","IDENTITY","#f0a3d0"],["skills","SKILLS","#9fb8f0"],["projects","PROJECTS","#a8dcc0"],["achievements","ACHIEVEMENTS","#d4e86a"],["portfolio","PORTFOLIO","#c4b0f0"],["evidence","EVIDENCE","#ddd"],["opportunities","OPPORTUNITIES","#f0a3d0"],["challenges","CHALLENGES","#9fb8f0"]];
 const CH=[{id:"py",title:"Python Logic Challenge",skill:"python",q:"What does len([1,2,3][1:]) return?",a:["2","3","1"],c:0},
@@ -217,22 +134,25 @@ const CH=[{id:"py",title:"Python Logic Challenge",skill:"python",q:"What does le
 
 /* ---------- auth ---------- */
 function authUI(){const m=S.authMode,su=m=="signup";const role=$("a_role")?.value||"student";
- $("auth").innerHTML=`<div class="box"><div class="display">Skill<br>Passport</div><p class="mono">${su?"Create a local passport":"Open a local passport"}</p><div class="warn">GitHub Pages demo: profiles and activity stay in this browser only. There is no secure login, cloud sync, or shared account.</div>
+ $("auth").innerHTML=`<div class="box"><div class="display">Skill<br>Passport</div><p class="mono">${su?"Create your passport":"Welcome back"}</p>
  ${su?`<select id="a_role" onchange="authUI()"><option value="student">Student</option><option value="creator" ${role=="creator"?"selected":""}>Opportunity Creator</option></select><input id="a_name" placeholder="Full name">`:""}
- <input id="a_email" type="email" placeholder="Email">
+ <input id="a_email" type="email" placeholder="Email" autocomplete="email">
+ <input id="a_password" type="password" placeholder="Password" autocomplete="${su?"new-password":"current-password"}">
  ${su&&role=="student"?`<input id="a_field" placeholder="Department / field"><input id="a_year" placeholder="Year">`:""}
  ${su&&role=="creator"?`<input id="a_org" placeholder="Organization"><select id="a_ot"><option>Club</option><option>Faculty</option><option>Placement team</option><option>Organization</option></select><input id="a_pos" placeholder="Your role">`:""}
  <div class="warn" id="a_err" style="display:none"></div>
  <button class="btn" onclick="doAuth()">${su?"CREATE PASSPORT":"OPEN PASSPORT"}</button>
- <p class="mono">${su?`Already used this browser? <a href="#" onclick="S.authMode='login';authUI()">Open your passport</a>`:`New here? <a href="#" onclick="S.authMode='signup';authUI()">Create a passport</a>`}</p></div>`}
+ <p class="mono">${su?`Already have an account? <a href="#" onclick="S.authMode='login';authUI()">Sign in</a>`:`New here? <a href="#" onclick="S.authMode='signup';authUI()">Create a passport</a>`}</p></div>`}
 async function doAuth(){const v=i=>$(i)?.value?.trim(),e=$("a_err");e.style.display="none";
  try{let r;if(S.authMode=="signup"){if(!v("a_name")||!v("a_email"))throw Error("Fill name and email");
-  r=await api("/signup",{method:"POST",body:{name:v("a_name"),email:v("a_email"),role:v("a_role"),field:v("a_field")||"",year:v("a_year")||"",org:v("a_org")||"",org_type:v("a_ot")||"",position:v("a_pos")||""}})}
- else{if(!v("a_email"))throw Error("Enter the email used for this browser profile");r=await api("/login",{method:"POST",body:{email:v("a_email")}})}
- S.token=r.token;localStorage.tk=r.token;await boot()}catch(x){e.textContent=x.message=="Failed to fetch"?"ML service unavailable":x.message;e.style.display="block"}}
-function logout(){localStorage.removeItem("tk");S.token="";S.user=null;$("app").style.display="none";$("auth").style.display="flex";S.authMode="login";authUI()}
+  if(!v("a_password")||v("a_password").length<10)throw Error("Use a password with at least 10 characters");
+  r=await api("/signup",{method:"POST",body:{name:v("a_name"),email:v("a_email"),password:v("a_password"),role:v("a_role"),field:v("a_field")||"",year:v("a_year")||"",org:v("a_org")||"",org_type:v("a_ot")||"",position:v("a_pos")||""}})}
+ else{if(!v("a_email")||!v("a_password"))throw Error("Enter your email and password");r=await api("/login",{method:"POST",body:{email:v("a_email"),password:v("a_password")}})}
+ S.token=r.token;localStorage.tk=r.token;await boot()}catch(x){e.textContent=x.message=="Failed to fetch"?"The service is unavailable or starting up. Try again shortly.":x.message;e.style.display="block"}}
+async function logout(){try{if(S.token)await api("/logout",{method:"POST"})}catch(x){toast(`Session could not be closed: ${x.message}`)}
+ localStorage.removeItem("tk");S.token="";S.user=null;$("app").style.display="none";$("auth").style.display="flex";S.authMode="login";authUI()}
 async function boot(){try{const r=await api("/profile");S.user=r.user;S.profile=r.profile;S.opps=await api("/opportunities");S.status=await api("/my-status");S.mlDown=false}
- catch(x){if(!S.user){logout();return}S.mlDown=true}
+ catch(x){if(!S.user){S.token="";localStorage.removeItem("tk");authUI();$("a_err").textContent=x.message=="Failed to fetch"?"The service is unavailable or starting up. Try again shortly.":x.message;$("a_err").style.display="block";return}S.mlDown=true}
  $("auth").style.display="none";$("app").style.display="grid";S.view=S.user.role=="creator"?"chome":"passport";chrome();render();if(S.user.role=="student")loadMatches()}
 async function loadMatches(){try{S.matched=await api("/match-opportunities",{method:"POST",body:S.profile});S.mlDown=false}catch(x){S.matched=null;S.mlDown=true;toast(`Matching failed: ${x.message}`)}render()}
 async function saveProfile(){try{await api("/profile",{method:"PUT",body:S.profile});await loadMatches()}catch(x){toast(`Save failed: ${x.message}`)}}
@@ -249,7 +169,7 @@ function go(v,q){S.view=v;S.open=null;S.cand=null;S.q=q||"";chrome();render()}
 function profileModal(){modal(`<div class="display" style="font-size:30px">Profile</div><p><b>${esc(S.user.name)}</b><br>${esc(S.user.email)}<br>Role: ${esc(S.user.role)}</p>
  <button class="btn" onclick="editProfile()">EDIT PROFILE</button><button class="btn alt" onclick="logout();closeM()">LOGOUT</button>`)}
 function editProfile(){modal(`<h3>Edit profile</h3><input id="e_n" value="${esc(S.user.name)}"><input id="e_f" value="${esc(S.user.field||"")}" placeholder="Field"><button class="btn" onclick="saveUserEdit()">SAVE</button>`)}
-async function saveUserEdit(){try{S.user=await api("/user",{method:"PUT",body:{name:$("e_n").value.trim(),field:$("e_f").value.trim()}});closeM();chrome();render();toast("Saved in this browser")}catch(x){toast(`Save failed: ${x.message}`)}}
+async function saveUserEdit(){try{S.user=await api("/user",{method:"PUT",body:{name:$("e_n").value.trim(),field:$("e_f").value.trim()}});closeM();chrome();render();toast("Profile updated")}catch(x){toast(`Save failed: ${x.message}`)}}
 function modal(h){$("modal").innerHTML=`<div class="box">${h}<p><button class="btn" onclick="closeM()">CLOSE</button></p></div>`;$("modal").style.display="flex"}
 function closeM(){$("modal").style.display="none"}
 
@@ -266,7 +186,7 @@ function pageContent(i){const p=P(),u=S.user,k=PAGES[i][0];
  if(k=="portfolio")return[`<div class="display">Portfolio</div><p><button class="btn" onclick="linkModal()">+ ADD LINK</button></p>`,
   p.links.length?p.links.map((x,j)=>`<div class="doc"><span class="pill">${esc(x.kind)}</span><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.url)}</a> <b style="cursor:pointer" onclick="delItem('links',${j})">×</b></div>`).join(""):emp("ADD LINK","linkModal()")];
  if(k=="evidence"){const ev=evidence();return[`<div class="display">Evidence</div><p class="mono">Claim → Experience → Capability</p><p class="mono">Nothing here is marked VERIFIED unless verified.</p>`,ev.length?ev.map(e=>`<div class="doc"><span class="pill">${e.type}</span><span class="pill" style="background:var(--lav)">${e.status}</span> ${esc(e.title)}</div>`).join(""):emp("ADD MATERIAL","materialModal()")]}
- if(k=="opportunities"){const m=(S.matched||[]).slice(0,4);return[`<div class="display">Matches</div><p class="mono">On-device text similarity · demo ranking, not an assessment</p>${S.mlDown?'<div class="warn">Matching unavailable</div>':""}`,m.length?m.map(oppDoc).join(""):(S.mlDown?"":emp("ADD SKILLS","addSkill()"))]}
+ if(k=="opportunities"){const m=(S.matched||[]).slice(0,4);return[`<div class="display">Matches</div><p class="mono">Skill similarity · not an assessment</p>${S.mlDown?'<div class="warn">Matching unavailable</div>':""}`,m.length?m.map(oppDoc).join(""):(S.mlDown?"":emp("ADD SKILLS","addSkill()"))]}
  if(k=="challenges")return[`<div class="display">Challenges</div>`,CH.map(c=>`<div class="doc"><b>${c.title}</b><br><span class="mono">Tests ${c.skill}</span> <button class="btn" onclick="startCh('${c.id}')">START CHALLENGE</button></div>`).join("")]}
 function evidence(){const p=P();return[...p.projects.map(x=>({type:"PROJECT",status:x.link?"LINKED":"SELF-REPORTED",title:x.title})),...p.achievements.map(x=>({type:"CERTIFICATE",status:"SELF-REPORTED",title:x.title})),...p.links.map(x=>({type:x.kind.toUpperCase()=="GITHUB"?"GITHUB":"PORTFOLIO",status:"LINKED",title:x.url})),...(p.evidence||[])]}
 function oppDoc(o){return`<div class="doc" onclick="openOpp('${o.id}')"><span class="sim">${o.similarity!=null?(o.similarity*100).toFixed(2)+"%":""}</span> <span class="mono">Similarity match</span><br><b>${esc(o.title)}</b> <span class="mono">· ${esc(o.type)}</span></div>`}
@@ -292,12 +212,12 @@ function saveItem(k,j){const t=$("i_t").value.trim();if(!t){toast("Title require
 function itemView(k,j){const x=P()[k][j];modal(`<div class="display" style="font-size:32px">${esc(x.title)}</div><p>${esc(x.description)}</p><p class="mono">${esc(x.tech||x.kind||"")} ${x.role?"· "+esc(x.role):""}</p>${x.link?`<a href="${esc(x.link)}" target="_blank" rel="noopener">${esc(x.link)}</a>`:""}<p><button class="btn" onclick="itemModal('${k}',${j})">EDIT</button><button class="btn alt" onclick="if(confirm('Delete?')){delItem('${k}',${j});closeM()}">DELETE</button></p>`)}
 function linkModal(){modal(`<h3>Add link</h3><select id="l_k">${["GitHub","Portfolio","LinkedIn","Behance","Dribbble","Other"].map(o=>`<option>${o}</option>`).join("")}</select><input id="l_u" placeholder="https://…"><button class="btn" onclick="const u=$('l_u').value.trim();if(!/^https?:\\/\\//.test(u)){toast('Enter a full URL');return}P().links.push({kind:$('l_k').value,url:u});saveProfile();closeM();render()">ADD</button>`)}
 function materialModal(){modal(`<h3>Add material</h3>${[["ADD RESUME","resumeModal()"],["ADD PROJECT","itemModal('projects')"],["ADD CERTIFICATE","itemModal('achievements')"],["ADD ACHIEVEMENT","itemModal('achievements')"],["ADD PORTFOLIO LINK","linkModal()"],["ADD GITHUB LINK","linkModal()"]].map(([a,b])=>`<button class="btn" onclick="${b}">${a}</button>`).join("")}`)}
-function resumeModal(){modal(`<h3>Analyze a resume</h3><p class="mono">TXT, PDF, and DOCX files are read in this browser. Scanned PDFs and older DOC files are not supported.</p><input type="file" id="rf" accept=".txt,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"><button class="btn" onclick="analyze()">UPLOAD</button><div id="rs"></div>`)}
+function resumeModal(){modal(`<h3>Analyze a resume</h3><p class="mono">Upload TXT, PDF, or DOCX. The file is sent to Skill Passport for extraction; extracted text is saved to your profile when you add it.</p><input type="file" id="rf" accept=".txt,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"><button class="btn" onclick="analyze()">UPLOAD</button><div id="rs"></div>`)}
 async function analyze(){const f=$("rf").files[0];if(!f){toast("Choose a file");return}
  $("rs").innerHTML="<p class='mono'>Analyzing… extracting…</p>";const fd=new FormData();fd.append("file",f);
  try{const r=await api("/analyze-resume",{method:"POST",body:fd});S.pending=r;
   $("rs").innerHTML=`<p class="mono">Skills found — review &amp; edit (comma separated)</p><textarea id="rk">${esc(r.skills.join(", "))}</textarea><button class="btn" onclick="const a=$('rk').value.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);P().skills=[...new Set([...P().skills,...a])];P().resume_text=S.pending.text;saveProfile();closeM();render();toast('Added to passport')">ADD TO PASSPORT</button>`}
- catch(x){$("rs").innerHTML=`<div class="warn">${x.message=="Failed to fetch"?"ML SERVICE UNAVAILABLE":esc(x.message)}</div>`}}
+ catch(x){$("rs").innerHTML=`<div class="warn">${x.message=="Failed to fetch"?"The service is unavailable or starting up. Try again shortly.":esc(x.message)}</div>`}}
 
 /* ---------- challenges ---------- */
 function startCh(id){const c=CH.find(x=>x.id==id);modal(`<h3>${c.title}</h3><p>${c.q}</p>${c.a.map((a,i)=>`<label><input type="radio" name="ch" value="${i}" style="width:auto"> ${a}</label><br>`).join("")}<button class="btn" onclick="submitCh('${id}')">SUBMIT</button>`)}
@@ -314,12 +234,12 @@ async function saveOpp(id){try{const r=await api(`/opportunities/${id}/save`,{me
 function studentOpps(){const m=S.matched||S.opps;return m}
 function leftFor(){const v=S.view;
  if(v=="challenges")return`<div class="display">Challenges</div>`+CH.map(c=>`<div class="doc"><b>${c.title}</b><br><span class="mono">Tests ${c.skill}</span><br><button class="btn" onclick="startCh('${c.id}')">START CHALLENGE</button></div>`).join("");
- if(v=="opps")return`<div class="display">Opportunities</div><p class="mono">On-device text similarity</p>${S.mlDown?'<div class="warn">Matching unavailable — showing unranked list</div>':""}`;
+ if(v=="opps")return`<div class="display">Opportunities</div><p class="mono">Skill similarity</p>${S.mlDown?'<div class="warn">Matching unavailable — showing unranked list</div>':""}`;
  if(v=="discover")return`<div class="display">Discover</div><input id="dq" value="${esc(S.q||"")}" placeholder="python, club…" style="width:100%;padding:8px" oninput="S.q=this.value;render();$('dq').focus()">`;
  if(v=="chome")return`<div class="display">Hello,<br>${esc(S.user.name.split(" ")[0])}</div><p class="mono">${esc(S.user.org)} · ${esc(S.user.position)}</p><div class="barcode"></div><p class="hand" style="color:#444;font-size:20px">find your people ↗</p>`;
- if(v=="post")return`<div class="display">Post<br>opportunity</div><p class="mono">Skills feed the ML matching.</p>`;
+ if(v=="post")return`<div class="display">Post<br>opportunity</div><p class="mono">Skills shape opportunity matching.</p>`;
  if(v=="mine")return`<div class="display">My<br>opportunities</div>`;
- if(v=="cands")return`<div class="display">Matched<br>students</div><p class="mono">Only profiles created in this browser are visible. Similarity is not a talent ranking.</p>`+mineOpps().map(o=>`<button class="btn" onclick="showCands('${o.id}')">${esc(o.title)}</button>`).join("");
+ if(v=="cands")return`<div class="display">Matched<br>students</div><p class="mono">Similarity is not a talent ranking.</p>`+mineOpps().map(o=>`<button class="btn" onclick="showCands('${o.id}')">${esc(o.title)}</button>`).join("");
  if(v=="profile")return`<div class="display">Profile</div><p>${esc(S.user.name)}<br>${esc(S.user.email)}</p>`;return""}
 const mineOpps=()=>S.opps.filter(o=>o.creator==S.user.id);
 function rightFor(){const v=S.view;
@@ -343,7 +263,7 @@ function oppForm(o){o=o||{};return`<input id="o_t" placeholder="Title" value="${
  <button class="btn" onclick="pubOpp('${o.id||""}')">${o.id?"SAVE CHANGES":"PUBLISH OPPORTUNITY"}</button>`}
 async function pubOpp(id){const b={title:$("o_t").value.trim(),org:$("o_o").value,description:$("o_d").value.trim(),skills:$("o_s").value.split(",").map(s=>s.trim().toLowerCase()).filter(Boolean),type:$("o_y").value,deadline:$("o_dl").value,location:$("o_l").value,contact:$("o_c").value};
  if(!b.title||!b.description){toast("Title and description required");return}
- try{await api(id?"/opportunities/"+id:"/opportunities",{method:id?"PUT":"POST",body:b});S.opps=await api("/opportunities");closeM();toast("Published in this browser");go("mine")}catch(x){toast(x.message)}}
+ try{await api(id?"/opportunities/"+id:"/opportunities",{method:id?"PUT":"POST",body:b});S.opps=await api("/opportunities");closeM();toast("Published");go("mine")}catch(x){toast(x.message)}}
 function editOpp(id){modal(`<h3>Edit opportunity</h3>${oppForm(S.opps.find(o=>o.id==id))}`)}
 async function delOpp(id){if(!confirm("Delete?"))return;try{await api("/opportunities/"+id,{method:"DELETE"});S.opps=await api("/opportunities");toast("Deleted");render()}catch(x){toast(x.message)}}
 async function showCands(id){try{S.cand=await api(`/opportunities/${id}/candidates`);render()}catch(x){toast(`Could not load profiles: ${x.message}`)}}
