@@ -25,8 +25,11 @@ frontend only; it does not run `server.py` or provide a shared database.
 The Pages demo stores its profiles, resumes, opportunities, and activity in
 the current browser's local storage. There is no secure authentication, cloud
 sync, cross-device access, or shared candidate directory. Do not use real
-passwords or sensitive personal information. Resume analysis accepts plain
-text files only; PDF extraction requires a separately hosted API.
+passwords or sensitive personal information. Resume analysis supports `.txt`,
+text-based `.pdf`, and `.docx` files in the browser. Scanned PDFs need OCR and
+legacy `.doc` files must be saved as `.docx`. PDF.js and Mammoth are loaded
+from jsDelivr; uploaded files are processed locally and are not sent to those
+services.
 
 The public repository intentionally excludes the resume dataset, generated
 model artifacts, local database, and sample resume because they may contain
