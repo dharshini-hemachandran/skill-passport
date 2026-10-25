@@ -7,9 +7,8 @@ and achievements, and finding campus opportunities.
 
 GitHub Pages only hosts the frontend. To enable shared accounts and persistent
 profiles, deploy the FastAPI API on Render and connect it to a Neon PostgreSQL
-database. The frontend is configured to call the Render service at
-`https://skill-passport-api.onrender.com`; deploy the API before publishing the
-frontend changes that remove the browser-only mode.
+database. The frontend calls the Render service at
+`https://skill-passport-api-jqmp.onrender.com`.
 
 ### Free-tier setup
 
@@ -18,8 +17,8 @@ frontend changes that remove the browser-only mode.
    `render.yaml` configuration.
 3. Set the Render service's `DATABASE_URL` environment variable to the Neon
    connection string. Do not commit the connection string to GitHub.
-4. Deploy the service as `skill-passport-api` so the Pages frontend can reach
-   `https://skill-passport-api.onrender.com`.
+4. Deploy the service as `skill-passport-api`; Render assigns its public
+   hostname, which must match the API URL in `static/index.html`.
 5. In the repository's **Settings → Pages**, select **GitHub Actions**.
    Pushes to `main` deploy the `static/` frontend.
 
@@ -29,9 +28,9 @@ temporary filesystem. This starter keeps shared application state in one
 database record and is intended to run as a single API instance. Move to
 transactional per-entity tables before scaling it to multiple instances.
 
-The Pages deployment workflow publishes `static/` from `main`. Until the
-Render service and Neon database are configured, keep the currently published
-frontend in place; it is the browser-only version.
+The Pages deployment workflow publishes `static/` from `main`. Publish the
+backend-connected frontend only after the Render service and Neon database are
+configured and the API health check succeeds.
 
 ## Accounts and resume privacy
 
