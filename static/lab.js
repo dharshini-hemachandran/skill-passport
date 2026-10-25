@@ -37,13 +37,13 @@ function labLeft(){const l=S.chs||[],n=f=>l.filter(f).length;
  return`<div class="display">Challenge<br>Lab</div><p class="mono">Short timed projects. AI tools are allowed — you must explain and defend your work.</p>
  <p class="mono">${n(live)} available · ${n(c=>c.status==="submitted")} submitted · ${n(c=>c.status==="reviewed")} reviewed</p>
  <div class="doc"><b class="mono">New challenge</b><br><select id="lg_o" style="width:100%;padding:6px;margin:6px 0"><option value="">Based on my skills</option>${S.opps.map(o=>`<option value="${o.id}">${esc(o.title)} — ${esc(o.org)}</option>`).join("")}</select>
- <input id="lg_s" placeholder="Skill (optional, e.g. python)" style="width:100%;padding:6px"><button class="btn" id="lg_b" onclick="labGenerate()">GENERATE CHALLENGE</button></div>`}
+ <input id="lg_s" list="lg_l" placeholder="Skill (optional, e.g. python)" style="width:100%;padding:6px"><datalist id="lg_l">${["python","sql","data analysis","machine learning","computer vision","javascript","react","ui design","cybersecurity","problem solving"].map(k=>`<option value="${k}">`).join("")}</datalist><button class="btn" id="lg_b" onclick="labGenerate()">GENERATE CHALLENGE</button><div id="lg_e"></div></div>`}
 function chCard(c){const t=new Date(c.deadline_at);return`<div class="doc" onclick="openCh('${c.id}')"><span class="pill">${stateOf(c)}</span>${lchip(levelOf(c))}<br><b>${esc(c.title)}</b><br><span class="mono">${esc(c.skill)} · ${c.limit} min · due ${fmt(t)}</span></div>`}
 function labRight(){if(S.chs===undefined||S.chsBusy)return`<p class="mono">Loading…</p>`;if(S.chErr)return failBox("Could not load challenges: "+S.chErr);
  return S.chs.length?S.chs.map(chCard).join(""):`<div class="empty"><div class="display" style="font-size:26px">No challenges yet</div><p class="mono">Generate one from your skills or an opportunity.</p></div>`}
 async function labGenerate(){const b=$("lg_b");b.disabled=true;b.textContent="GENERATING…";
  try{const c=await api("/challenges",{method:"POST",body:{opportunity_id:$("lg_o").value||null,skill:$("lg_s").value.trim()||null}});S.chs=[c,...(S.chs||[])];openCh(c.id)}
- catch(x){toast(x.message);b.disabled=false;b.textContent="GENERATE CHALLENGE"}}
+ catch(x){$("lg_e")&&($("lg_e").innerHTML=failBox(x.message));toast(x.message);b.disabled=false;b.textContent="GENERATE CHALLENGE"}}
 async function openCh(id){try{S.chOpen=await api("/challenges/"+id);S.view="ch";chrome();render();clearInterval(S.tm);S.tm=setInterval(tick,1000);tick()}catch(x){toast(x.message)}}
 function tick(){const e=$("cd");if(!e||S.view!=="ch"){clearInterval(S.tm);return}const c=S.chOpen,ms=new Date(c.deadline_at)-Date.now();
  e.textContent=c.status==="reviewed"?"REVIEWED":ms>0?`${Math.floor(ms/60000)}:${String(Math.floor(ms/1000)%60).padStart(2,"0")} LEFT`:"TIME UP"}
@@ -103,10 +103,34 @@ async function fullPassport(id){try{const p=await api(`/students/${id}/passport`
  ${p.projects.map(x=>`<div class="doc"><b>${esc(x.title)}</b><br>${esc(x.description||"")}<br><span class="mono">${esc(x.tech||"")}</span></div>`).join("")}
  ${p.achievements.map(x=>`<div class="doc"><b>${esc(x.title)}</b> <span class="mono">${esc(x.kind||"")} · SELF-REPORTED</span></div>`).join("")}
  ${p.links.map(x=>`<div class="doc"><span class="pill">${esc(x.kind)}</span><a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">${esc(x.url)}</a></div>`).join("")}
- ${(p.documents||[]).map(d=>`<div class="doc"><span class="pill">DOCUMENT</span><b>${esc(d.name)}</b> <span class="mono">${esc(d.kind)}</span><br><span class="mono">${esc(d.excerpt.slice(0,240))}</span></div>`).join("")}
- <p class="mono">Challenge results</p>${(p.challenges||[]).map(h=>`<div class="doc" onclick="viewCh('${h.id}')">${lchip(levelOf(h))} <b>${esc(h.title)}</b> <span class="mono">${esc(h.skill)}</span></div>`).join("")||'<p class="mono">None shared.</p>'}`)}catch(x){toast(x.message)}}
+ ${(p.documents||[]).map(d=>`<div class="doc"><span class="pill">${d.kind==="certificate"?"CERTIFICATE":"DOCUMENT"}</span> <b>${esc(d.name)}</b> <span class="mono">${esc(d.kind)} · UPLOADED, NOT VERIFIED</span><br>${d.image?`<img data-doc="${d.id}" alt="" style="max-width:100%;max-height:200px">`:`<span class="mono">${esc(d.excerpt.slice(0,240))}</span>`}</div>`).join("")}
+ <p class="mono">Challenge results</p>${(p.challenges||[]).map(h=>`<div class="doc" onclick="viewCh('${h.id}')">${lchip(levelOf(h))} <b>${esc(h.title)}</b> <span class="mono">${esc(h.skill)}</span></div>`).join("")||'<p class="mono">None shared.</p>'}`);loadImgs()}catch(x){toast(x.message)}}
 async function viewCh(id){try{const c=await api("/challenges/"+id),rv=c.review;
  modal(`<div class="mono">${esc(c.skill)} · ${lchip(levelOf(c))}</div><div class="display" style="font-size:28px">${esc(c.title)}</div><p>${esc(c.scenario)}</p>
  ${c.subs.map(s=>`<div class="doc"><span class="mono">Submission ${s.n} · ${fmt(s.at)} · AI tools: ${s.ai_used?"yes — "+esc(s.ai_notes):"no"}</span><p><b>Solution</b><br>${esc(s.answer)}</p><p><b>Reasoning</b><br>${esc(s.reasoning)}</p>${c.followups.map((q,i)=>`<p class="mono">${esc(q)}</p><p>${esc(s.followups[i]||"")}</p>`).join("")}</div>`).join("")}
  ${c.auto?assessBox(c):""}${S.user.role==="creator"?`<p class="mono">Reviewer rubric (0–4)</p>${CRIT.map(([k,l])=>`<label>${l} <select id="rv_${k}">${[0,1,2,3,4].map(n=>`<option ${rv&&rv.scores[k]===n?"selected":""}>${n}</option>`).join("")}</select></label><br>`).join("")}<textarea id="rv_f" placeholder="Feedback for the student" style="width:100%;height:60px">${rv?esc(rv.feedback):""}</textarea><button class="btn" onclick="sendReview('${c.id}')">SAVE REVIEW</button>`:""}`)}catch(x){toast(x.message)}}
 async function sendReview(id){try{await api(`/challenges/${id}/review`,{method:"POST",body:{scores:Object.fromEntries(CRIT.map(([k])=>[k,+$("rv_"+k).value])),feedback:$("rv_f").value.trim()}});toast("Review saved — marked HUMAN-VERIFIED");closeM();recLoad()}catch(x){toast(x.message)}}
+
+/* ---- stability: no animation replay or lost typing on background re-renders; clear messages ---- */
+const _api=window.api;
+window.api=async function(p,o){try{return await _api(p,o)}catch(x){
+ if(/^\/(challenges|consent|documents|students|recruiter)/.test(p)&&x.message==="Not Found")throw new Error("The server is still updating to the newest version. Wait a minute, refresh the page and try again.");throw x}};
+const _render=window.render;let _lastKey="";
+window.render=function(){const ids=["ch_a","ch_r","ch_n"],keep=S.view==="ch"&&$("ch_a")?{v:ids.map(i=>$(i).value),ai:$("ch_ai").checked,f:[...document.querySelectorAll(".cf")].map(e=>e.value),m:[...document.querySelectorAll(".cm")].map(e=>e.checked),fo:document.activeElement&&document.activeElement.id}:null;
+ _render();const key=S.view+":"+S.page+":"+(S.chOpen?S.chOpen.id+S.chOpen.status:"");
+ if(key===_lastKey)document.querySelectorAll(".book.flip").forEach(b=>b.classList.remove("flip"));_lastKey=key;
+ if(keep&&$("ch_a")){ids.forEach((i,k)=>$(i).value=keep.v[k]);$("ch_ai").checked=keep.ai;document.querySelectorAll(".cf").forEach((e,k)=>e.value=keep.f[k]||"");document.querySelectorAll(".cm").forEach((e,k)=>e.checked=!!keep.m[k]);if(keep.fo&&$(keep.fo))$(keep.fo).focus()}};
+
+/* ---- certificates: PNG / JPG / PDF / DOCX / TXT ---- */
+function shrink(f){return new Promise(res=>{if(!/^image\//.test(f.type)||f.size<=500000)return res(f);const im=new Image(),u=URL.createObjectURL(f);
+ im.onload=()=>{const k=Math.min(1,1400/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext("2d").drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);
+  const tryQ=q=>c.toBlob(b=>{if(b.size<=560000||q<=.4)res(new File([b],f.name.replace(/\.\w+$/,".jpg"),{type:"image/jpeg"}));else tryQ(q-.15)},"image/jpeg",q);tryQ(.82)};im.onerror=()=>res(f);im.src=u})}
+window.docsModal=function(kind){const d=P().documents||[];modal(`<h3>My documents &amp; certificates</h3><p class="mono">PNG, JPG, PDF, DOCX or TXT. Images are shrunk automatically. Shared only if you allow it under Sharing &amp; Privacy.</p>
+ <select id="dk">${["certificate","transcript","project","other"].map(k=>`<option value="${k}" ${k===(kind||"certificate")?"selected":""}>${k[0].toUpperCase()+k.slice(1)}</option>`).join("")}</select><input type="file" id="df" accept=".png,.jpg,.jpeg,.pdf,.docx,.txt,image/png,image/jpeg"><button class="btn" id="du" onclick="uploadDoc()">UPLOAD</button><div id="de"></div>
+ ${d.map(x=>`<div class="doc">${x.image?`<img data-doc="${x.id}" alt="" style="max-width:100%;max-height:120px;display:block;margin-bottom:6px">`:""}<b>${esc(x.name)}</b> <span class="mono">${esc(x.kind)}</span> <button class="btn alt" onclick="delDoc('${x.id}')">DELETE</button></div>`).join("")||'<p class="mono">No documents yet.</p>'}`);loadImgs()};
+async function loadImgs(){for(const im of document.querySelectorAll("img[data-doc]")){try{im.src=(await api(`/documents/${im.dataset.doc}/image`)).data_url}catch{im.alt="image unavailable"}}}
+window.uploadDoc=async function(){const f0=$("df").files[0],b=$("du");if(!f0){$("de").innerHTML=failBox("Choose a file first");return}b.disabled=true;b.textContent="UPLOADING…";
+ try{const f=await shrink(f0),fd=new FormData();fd.append("file",f);fd.append("kind",$("dk").value);await api("/documents",{method:"POST",body:fd});S.profile=(await api("/profile")).profile;docsModal($("dk")?$("dk").value:"certificate");render();toast("Document added")}
+ catch(x){$("de")&&($("de").innerHTML=failBox(x.message));b&&(b.disabled=false,b.textContent="UPLOAD")}};
+const _mm=window.materialModal;window.materialModal=function(){_mm();$("modal").querySelector(".box").insertAdjacentHTML("beforeend",`<p><button class="btn alt" onclick="docsModal('certificate')">UPLOAD CERTIFICATE (PNG / PDF)</button></p>`)};
+const _pc2=window.pageContent;window.pageContent=function(i){const r=_pc2(i);if(PAGES[i][0]==="achievements"&&S.user.role==="student")r[0]+=`<p><button class="btn alt" onclick="docsModal('certificate')">UPLOAD CERTIFICATE (PNG / PDF)</button></p>`;return r};

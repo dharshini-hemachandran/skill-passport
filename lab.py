@@ -1,4 +1,5 @@
 """Consent-based passport access, timed skill challenges, reviewer rubric and documents."""
+import base64
 import io
 import json
 import os
@@ -22,6 +23,8 @@ CRIT = [("correctness", "Analysis & correctness", 30), ("reasoning", "Reasoning 
 WEIGHT = {i: w for i, _, w in CRIT}
 KW = ("because", "trade-off", "tradeoff", "instead", "however", "assum", "alternative", "risk", "edge case", "cost")
 MAX_DOC = 3 * 1024 * 1024
+MAX_IMG = 600 * 1024
+IMG_EXT = {".png", ".jpg", ".jpeg"}
 
 
 def now():
@@ -187,12 +190,11 @@ def generate(g: Gen, authorization: str | None = Header(default=None)):
     req = [s.lower() for s in (opp or {}).get("skills", [])]
     skill = ((g.skill or "").strip().lower() or next((s for s in req if s in mine), None)
              or (req[0] if req else None) or (mine[0] if mine else None))
-    if not skill:
-        raise HTTPException(422, "Add a skill to your passport or choose an opportunity first.")
+    skill = skill or "problem solving"  # students with no skills yet still get a general challenge
     live = [c for c in core.db["challenges"] if c["student"] == user["id"] and c["status"] == "issued"
             and c["deadline_at"] > iso(now())]
     if len(live) >= 3:
-        raise HTTPException(409, "Finish or wait out your open challenges before generating another.")
+        raise HTTPException(409, "You already have 3 open challenges. Open one from the list, or wait for one to expire, before generating another.")
     spec = ai_build(skill, opp, mine)
     source = "ai" if spec else "template"
     spec = spec or build(skill, random.Random(secrets.randbits(32)))
@@ -343,7 +345,7 @@ def passport(sid: str, authorization: str | None = Header(default=None)):
            "consent": c}
     if c["documents"] or own:
         out["documents"] = [{"id": d["id"], "name": d["name"], "kind": d["kind"], "uploaded_at": d["uploaded_at"],
-                             "excerpt": d["text"][:600]} for d in p.get("documents", [])]
+                             "image": d.get("image", False), "excerpt": d["text"][:600]} for d in p.get("documents", [])]
     if c["challenges"] or own:
         out["challenges"] = [summary(x) for x in core.db["challenges"] if x["student"] == sid and x["status"] != "issued"]
     return out
@@ -383,13 +385,23 @@ async def upload_document(file: UploadFile = File(...), kind: str = Form("certif
     need_role(user, "student")
     name = Path(file.filename or "document").name[:80]
     ext = Path(name).suffix.lower()
-    if ext not in {".pdf", ".docx", ".txt"}:
-        raise HTTPException(415, "Supported document formats are .pdf, .docx and .txt.")
+    if ext not in {".pdf", ".docx", ".txt"} | IMG_EXT:
+        raise HTTPException(415, "Supported formats are .pdf, .docx, .txt, .png and .jpg.")
     raw = await file.read(MAX_DOC + 1)
     if len(raw) > MAX_DOC:
         raise HTTPException(413, "Documents must be 3 MB or smaller.")
+    image = None
+    if ext in IMG_EXT:
+        png, jpg = raw.startswith(b"\x89PNG\r\n\x1a\n"), raw.startswith(b"\xff\xd8\xff")
+        if not (png or jpg):
+            raise HTTPException(415, "That file is not a valid PNG or JPEG image.")
+        if len(raw) > MAX_IMG:
+            raise HTTPException(413, "Images must be 600 KB or smaller. The app shrinks large images automatically.")
+        image = f"data:{'image/png' if png else 'image/jpeg'};base64," + base64.b64encode(raw).decode()
     try:
-        if ext == ".pdf":
+        if image:
+            text = ""
+        elif ext == ".pdf":
             text = "\n".join(pg.extract_text() or "" for pg in core.PdfReader(io.BytesIO(raw)).pages)
         elif ext == ".docx":
             text = core.extract_docx_text(raw)
@@ -400,11 +412,27 @@ async def upload_document(file: UploadFile = File(...), kind: str = Form("certif
     docs = core.db["profiles"].setdefault(user["id"], {}).setdefault("documents", [])
     if len(docs) >= 10:
         raise HTTPException(409, "You can store up to 10 documents.")
-    doc = {"id": secrets.token_hex(6), "name": name, "size": len(raw), "uploaded_at": iso(now()),
+    if image and sum(1 for d in docs if d.get("image")) >= 3:
+        raise HTTPException(409, "You can store up to 3 image certificates.")
+    doc = {"id": secrets.token_hex(6), "name": name, "size": len(raw), "uploaded_at": iso(now()), "image": bool(image),
            "kind": kind if kind in {"certificate", "transcript", "project", "other"} else "other", "text": text[:20000]}
     docs.append(doc)
+    if image:
+        core.db.setdefault("doc_images", {})[doc["id"]] = image
     core.save_state(core.db)
     return {k: v for k, v in doc.items() if k != "text"}
+
+
+@router.get("/documents/{did}/image")
+def document_image(did: str, authorization: str | None = Header(default=None)):
+    viewer = core.current_user(authorization)
+    ensure()
+    owner = next((sid for sid, p in core.db["profiles"].items() if any(d["id"] == did for d in p.get("documents", []))), None)
+    if not owner or did not in core.db.get("doc_images", {}):
+        raise HTTPException(404, "Image not found.")
+    if owner != viewer["id"] and not (can_view(viewer, owner) and consent(owner)["documents"]):
+        raise HTTPException(403, "This document has not been shared with you.")
+    return {"data_url": core.db["doc_images"][did]}
 
 
 @router.delete("/documents/{did}")
@@ -415,6 +443,7 @@ def delete_document(did: str, authorization: str | None = Header(default=None)):
     if len(keep) == len(docs):
         raise HTTPException(404, "Document not found.")
     core.db["profiles"][user["id"]]["documents"] = keep
+    core.db.get("doc_images", {}).pop(did, None)
     core.save_state(core.db)
     return {"ok": True}
 
