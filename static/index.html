@@ -110,6 +110,8 @@ body{background:radial-gradient(#2a1fe055 1px,transparent 1.5px) 0 0/22px 22px,r
 <div id="auth"></div><div id="app" style="display:none">
 <div id="nav"></div><div id="top"></div><div id="stage"></div><div id="thumbs"></div></div>
 <div id="modal"></div><div id="toast"></div>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.9.0/mammoth.browser.min.js"></script>
 <script>
 const API="/api";
 let S={token:localStorage.tk||"",user:null,profile:null,opps:[],status:{applied:[],saved:[]},page:0,view:"passport",mlDown:false,matched:null,open:null,cand:null,authMode:"login"};
@@ -170,9 +172,25 @@ async function api(path,o={}){
   return db.opportunities.map(item=>({...item,similarity:demoSimilarity(text,[item.title,item.description,...(item.skills||[])].join(" "))})).sort((a,b)=>b.similarity-a.similarity)
  }
  if(route==="/analyze-resume"&&method==="POST"){
-  const file=body.get("file");if(!file)fail(400,"Choose a resume text file.");
-  if(!file.name.toLowerCase().endsWith(".txt"))fail(415,"GitHub Pages demo supports local .txt resumes only. PDF extraction requires the optional API server.");
-  const text=await file.text();return{skills:demoSkills(text),text}
+  const file=body.get("file");if(!file)fail(400,"Choose a resume file.");
+  const extension=file.name.split(".").pop().toLowerCase();let text="";
+  if(extension==="txt")text=await file.text();
+  else if(extension==="pdf"){
+   if(!window.pdfjsLib)fail(503,"PDF reader could not load. Check your internet connection and try again.");
+   pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+   const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
+   const pages=[];
+   for(let pageNumber=1;pageNumber<=pdf.numPages;pageNumber++){
+    const page=await pdf.getPage(pageNumber),content=await page.getTextContent();
+    pages.push(content.items.map(item=>item.str||"").join(" "));
+   }
+   text=pages.join("\n");
+  }else if(extension==="docx"){
+   if(!window.mammoth)fail(503,"Word document reader could not load. Check your internet connection and try again.");
+   const result=await mammoth.extractRawText({arrayBuffer:await file.arrayBuffer()});text=result.value;
+  }else fail(415,"Supported resume formats are .txt, .pdf, and .docx. Please save older .doc files as .docx.");
+  if(!text.trim())fail(422,"No readable text was found. Scanned PDFs need OCR; try a text-based PDF or .docx file.");
+  return{skills:demoSkills(text),text}
  }
  const match=route.match(/^\/opportunities\/([^/]+)(?:\/(apply|save|candidates))?$/);
  if(match){
@@ -274,7 +292,7 @@ function saveItem(k,j){const t=$("i_t").value.trim();if(!t){toast("Title require
 function itemView(k,j){const x=P()[k][j];modal(`<div class="display" style="font-size:32px">${esc(x.title)}</div><p>${esc(x.description)}</p><p class="mono">${esc(x.tech||x.kind||"")} ${x.role?"· "+esc(x.role):""}</p>${x.link?`<a href="${esc(x.link)}" target="_blank" rel="noopener">${esc(x.link)}</a>`:""}<p><button class="btn" onclick="itemModal('${k}',${j})">EDIT</button><button class="btn alt" onclick="if(confirm('Delete?')){delItem('${k}',${j});closeM()}">DELETE</button></p>`)}
 function linkModal(){modal(`<h3>Add link</h3><select id="l_k">${["GitHub","Portfolio","LinkedIn","Behance","Dribbble","Other"].map(o=>`<option>${o}</option>`).join("")}</select><input id="l_u" placeholder="https://…"><button class="btn" onclick="const u=$('l_u').value.trim();if(!/^https?:\\/\\//.test(u)){toast('Enter a full URL');return}P().links.push({kind:$('l_k').value,url:u});saveProfile();closeM();render()">ADD</button>`)}
 function materialModal(){modal(`<h3>Add material</h3>${[["ADD RESUME","resumeModal()"],["ADD PROJECT","itemModal('projects')"],["ADD CERTIFICATE","itemModal('achievements')"],["ADD ACHIEVEMENT","itemModal('achievements')"],["ADD PORTFOLIO LINK","linkModal()"],["ADD GITHUB LINK","linkModal()"]].map(([a,b])=>`<button class="btn" onclick="${b}">${a}</button>`).join("")}`)}
-function resumeModal(){modal(`<h3>Analyze a local text resume</h3><p class="mono">TXT only in the GitHub Pages demo. File contents stay in this browser.</p><input type="file" id="rf" accept=".txt,text/plain"><button class="btn" onclick="analyze()">UPLOAD</button><div id="rs"></div>`)}
+function resumeModal(){modal(`<h3>Analyze a resume</h3><p class="mono">TXT, PDF, and DOCX files are read in this browser. Scanned PDFs and older DOC files are not supported.</p><input type="file" id="rf" accept=".txt,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"><button class="btn" onclick="analyze()">UPLOAD</button><div id="rs"></div>`)}
 async function analyze(){const f=$("rf").files[0];if(!f){toast("Choose a file");return}
  $("rs").innerHTML="<p class='mono'>Analyzing… extracting…</p>";const fd=new FormData();fd.append("file",f);
  try{const r=await api("/analyze-resume",{method:"POST",body:fd});S.pending=r;
